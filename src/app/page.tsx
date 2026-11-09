@@ -227,9 +227,59 @@ export default function RecActsFullyFunctionalApp() {
   };
 
   // Load All Data from REST APIs
-  const loadAllData = async () => {
+  const loadAllData = async (monthOverride?: string) => {
     try {
-      // 1. User Context & Session Verification
+      const month = monthOverride || selectedMonth || '2026-10';
+      const date = '2026-10-31';
+
+      // Tier 1: Single Lightning-Fast Server-Side Bootstrap (Parallel DB Queries in 1 Network Trip)
+      const bootRes = await fetch(`/api/bootstrap?period=${month}&date=${date}`);
+      if (bootRes.ok) {
+        const data = await bootRes.json();
+        if (!data.authenticated || !data.user) {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setAuthChecking(false);
+          return;
+        }
+
+        setIsAuthenticated(true);
+        setRole(data.activeRole || 'member');
+        setCurrentUser({
+          id: data.activeMembership?.id || data.user.id,
+          userId: data.user.id,
+          name: data.user.name,
+          initials: data.user.initials,
+          email: data.user.email,
+          role: data.activeMembership?.designation || (data.activeRole ? data.activeRole.toUpperCase() : 'Member'),
+          team: data.activeMembership?.team?.name || 'BlindMatrix',
+          isPlatformAdmin: data.user.isPlatformAdmin,
+        });
+        if (data.organization) setOrganization(data.organization);
+        setAuthChecking(false);
+
+        if (data.attendance) setAttendance(data.attendance);
+        if (data.corrections) setCorrections(data.corrections || []);
+        if (data.workLog) {
+          setWorkLog({
+            submissionStatus: data.workLog.submissionStatus || 'Draft',
+            activities: data.workLog.activities || [],
+            history: data.workLog.history || [],
+          });
+        }
+        if (data.tickets) setTickets(data.tickets || []);
+        if (data.approvals) setApprovals(data.approvals || []);
+        if (data.blockers) setBlockers(data.blockers || []);
+        if (data.leaveData) setLeaveData(data.leaveData || { leaveTypes: [], balances: [], myRequests: [], teamRequests: [], holidays: [] });
+        if (data.kpiData) setKpiData(data.kpiData);
+        if (data.targetOverrides) setTargetOverrides(data.targetOverrides || []);
+        if (data.negativeImpacts) setNegativeImpacts(data.negativeImpacts || []);
+        if (data.eodHistory) setEodHistory(data.eodHistory || []);
+        if (data.settingsData) setSettingsData(data.settingsData);
+        return;
+      }
+
+      // Tier 2: Parallel Fallback if bootstrap endpoint is unreachable
       const meRes = await fetch('/api/auth/me');
       if (!meRes.ok) {
         setIsAuthenticated(false);
@@ -258,140 +308,50 @@ export default function RecActsFullyFunctionalApp() {
         team: meData.activeMembership?.team?.name || 'BlindMatrix',
         isPlatformAdmin: meData.user.isPlatformAdmin,
       });
-      if (meData.organization) {
-        setOrganization(meData.organization);
-      }
+      if (meData.organization) setOrganization(meData.organization);
       setAuthChecking(false);
 
-      // 2. Attendance Status
-      const attRes = await fetch('/api/attendance/status?date=2026-10-31');
-      if (attRes.ok) {
-        const attData = await attRes.json();
-        setAttendance(attData);
-      }
+      // Execute remaining essential queries in parallel
+      const [attRes, wlRes, tkRes, kpiRes, blkRes] = await Promise.all([
+        fetch(`/api/attendance/status?date=${date}`),
+        fetch(`/api/work-logs?date=${date}`),
+        fetch('/api/tickets'),
+        fetch(`/api/kpi/calculate?period=${month}`),
+        fetch('/api/blockers'),
+      ]);
 
-      // 3. Attendance Corrections
-      const corrRes = await fetch('/api/attendance/corrections');
-      if (corrRes.ok) {
-        const corrData = await corrRes.json();
-        setCorrections(corrData.corrections || []);
-      }
-
-      // 4. Work Logs
-      const wlRes = await fetch('/api/work-logs?date=2026-10-31');
+      if (attRes.ok) setAttendance(await attRes.json());
       if (wlRes.ok) {
-        const wlData = await wlRes.json();
-        if (wlData.workLog && wlData.workLog.activities?.length > 0) {
-          setWorkLog({
-            submissionStatus: wlData.workLog.submissionStatus,
-            activities: wlData.workLog.activities.map((a: any) => ({
-              id: a.id,
-              ticketRef: a.ticket?.reference || 'REQ-I3001',
-              activityType: a.activityType,
-              description: a.description,
-              startTime: a.startTime || '09:00',
-              endTime: a.endTime || '10:00',
-              durationMinutes: a.durationMinutes,
-              progressStatus: a.progressStatus,
-              blockerFlag: a.blockerFlag,
-            })),
-            history: wlData.history || [],
-          });
-        }
+        const wl = await wlRes.json();
+        if (wl.workLog) setWorkLog(wl.workLog);
       }
-
-      // 5. Tickets
-      const tkRes = await fetch('/api/tickets');
       if (tkRes.ok) {
-        const tkData = await tkRes.json();
-        setTickets(tkData.tickets || []);
+        const tk = await tkRes.json();
+        setTickets(tk.tickets || []);
       }
-
-      // 6. Approvals Queue
-      const apRes = await fetch('/api/work-logs/approvals');
-      if (apRes.ok) {
-        const apData = await apRes.json();
-        setApprovals(apData.approvals || []);
-      }
-
-      // 7. Blockers
-      const blkRes = await fetch('/api/blockers');
+      if (kpiRes.ok) setKpiData(await kpiRes.json());
       if (blkRes.ok) {
-        const blkData = await blkRes.json();
-        setBlockers(blkData.blockers || []);
-      }
-
-      // 8. Leave Planner
-      const lvRes = await fetch('/api/leave/requests');
-      if (lvRes.ok) {
-        const lvData = await lvRes.json();
-        setLeaveData(lvData);
-      }
-
-      // 9. KPI Scorecard
-      const kpiRes = await fetch('/api/kpi/calculate?period=2026-10');
-      if (kpiRes.ok) {
-        const kData = await kpiRes.json();
-        setKpiData(kData);
-      }
-
-      // 10. Target Overrides
-      const ovrRes = await fetch('/api/kpi/overrides');
-      if (ovrRes.ok) {
-        const ovrData = await ovrRes.json();
-        setTargetOverrides(ovrData.overrides || []);
-      }
-
-      // 11. Negative Impacts
-      const impRes = await fetch('/api/kpi/negative-impacts');
-      if (impRes.ok) {
-        const impData = await impRes.json();
-        setNegativeImpacts(impData.negativeImpacts || []);
-      }
-
-      // 12. EOD History
-      const eodRes = await fetch('/api/eod/history');
-      if (eodRes.ok) {
-        const eData = await eodRes.json();
-        setEodHistory(eData.eodHistory || []);
-      }
-
-      // 13. Audit Trail
-      const audRes = await fetch('/api/audit');
-      if (audRes.ok) {
-        const audData = await audRes.json();
-        setAuditLogs(audData.auditLogs || []);
-      }
-
-      // 14. Settings
-      const setRes = await fetch('/api/settings');
-      if (setRes.ok) {
-        const setData = await setRes.json();
-        if (setData.organization) setSettingsData(setData.organization);
-      }
-
-      // 15. God Mode Data
-      if (role === 'god') {
-        const orgRes = await fetch('/api/god/orgs');
-        if (orgRes.ok) {
-          const orgData = await orgRes.json();
-          setGodOrgs(orgData.organizations || []);
-        }
-        const flagRes = await fetch('/api/god/flags');
-        if (flagRes.ok) {
-          const flagData = await flagRes.json();
-          setFeatureFlags(flagData.flags || []);
-        }
-        const supRes = await fetch('/api/god/support');
-        if (supRes.ok) {
-          const supData = await supRes.json();
-          setSupportSessions(supData.supportSessions || []);
-        }
+        const blk = await blkRes.json();
+        setBlockers(blk.blockers || []);
       }
     } catch (err) {
       console.error('Error loading RecActs data:', err);
     }
   };
+
+  // Lazy-load God Mode and Audit datasets on tab demand
+  useEffect(() => {
+    if (activeTab === 'god' && role === 'god' && godOrgs.length === 0) {
+      Promise.all([
+        fetch('/api/god/orgs').then((r) => r.ok && r.json()).then((d) => d?.organizations && setGodOrgs(d.organizations)),
+        fetch('/api/god/flags').then((r) => r.ok && r.json()).then((d) => d?.flags && setFeatureFlags(d.flags)),
+        fetch('/api/god/support').then((r) => r.ok && r.json()).then((d) => d?.supportSessions && setSupportSessions(d.supportSessions)),
+      ]).catch(() => {});
+    }
+    if (activeTab === 'audit' && auditLogs.length === 0) {
+      fetch('/api/audit').then((r) => r.ok && r.json()).then((d) => d?.auditLogs && setAuditLogs(d.auditLogs)).catch(() => {});
+    }
+  }, [activeTab, role]);
 
   useEffect(() => {
     loadAllData();
