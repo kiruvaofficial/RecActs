@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # RecActs Next.js Full-Stack Application
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: recacts-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://recacts_user:recacts_password@postgres:5432/recacts_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=recacts-production-secure-secret-key-32chars-min-2026
+      - SESSION_COOKIE_NAME=recacts_session
+      - PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # PostgreSQL 16 Multi-Tenant Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: recacts-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: recacts_user
+      POSTGRES_PASSWORD: recacts_password
+      POSTGRES_DB: recacts_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recacts_user -d recacts_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis 7 for BullMQ background processing
+  redis:
+    image: redis:7-alpine
+    container_name: recacts-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

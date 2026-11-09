@@ -1,0 +1,654 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// 1. TENANCY & USERS
+// -------------------------------------------------------------
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  initials        String
+  phone           String?
+  location        String?
+  avatarUrl       String?
+  isPlatformAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships     OrganizationMembership[]
+  platformRoles   PlatformAdmin?
+  auditLogs       AuditLog[]
+}
+
+model PlatformAdmin {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  role       String   @default("Super Admin") // Super admin, Support, Billing
+  mfaEnabled Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Organization {
+  id                     String   @id @default(uuid())
+  slug                   String   @unique
+  name                   String
+  legalName              String?
+  industry               String?
+  email                  String?
+  timezone               String   @default("Asia/Kolkata (UTC+05:30)")
+  workDays               String   @default("Mon,Tue,Wed,Thu,Fri")
+  workHoursStart         String   @default("09:00")
+  workHoursEnd           String   @default("18:00")
+  gracePeriodMinutes     Int      @default(15)
+  productivityFactor     Float    @default(90.0) // 90%
+  capacityFactorMember   Float    @default(100.0) // 100%
+  capacityFactorLead     Float    @default(90.0) // 90%
+  capacityFactorManager  Float    @default(80.0) // 80%
+  kpiAggregationMethod   String   @default("weighted") // weighted or equal
+  subscriptionTier       String   @default("Business") // Starter, Business, Enterprise, Trial
+  subscriptionStatus     String   @default("Active") // Active, Suspended, Trial
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  memberships            OrganizationMembership[]
+  roles                  Role[]
+  teams                  Team[]
+  projects               Project[]
+  tickets                Ticket[]
+  workLogs               WorkLog[]
+  leaveTypes             LeaveType[]
+  leaveRequests          LeaveRequest[]
+  holidays               Holiday[]
+  kpiCalculations        KpiCalculation[]
+  targetOverrides        TargetOverride[]
+  negativeImpactRules    NegativeImpactRule[]
+  employeeImpacts        EmployeeNegativeImpact[]
+  blockers               Blocker[]
+  eodReports             EodReport[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  supportSessions        SupportSession[]
+}
+
+model OrganizationMembership {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  userId                 String
+  designation            String   // Manager, Team Lead, Senior Business Analyst, Business Analyst, etc.
+  teamId                 String?
+  reportingLeadId        String?
+  reportingManagerId     String?
+  employmentStatus       String   @default("Active") // Active, Onboarding, Inactive
+  joiningDate            String   // YYYY-MM-DD
+  capacityFactorOverride Float?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team                   Team?        @relation("TeamMembers", fields: [teamId], references: [id])
+  
+  roles                  MembershipRole[]
+  attendanceSessions     AttendanceSession[]
+  attendanceCorrections  AttendanceCorrection[]
+  workLogs               WorkLog[]
+  ticketAssignments      TicketAssignment[]
+  createdTickets         Ticket[]             @relation("TicketCreator")
+  raisedBlockers         Blocker[]            @relation("BlockerRaiser")
+  assignedLeadBlockers   Blocker[]            @relation("BlockerLead")
+  escalatedBlockers      Blocker[]            @relation("BlockerEscalated")
+  leaveBalances          LeaveBalance[]
+  leaveRequests          LeaveRequest[]
+  kpiCalculations        KpiCalculation[]
+  targetOverrides        TargetOverride[]
+  employeeImpacts        EmployeeNegativeImpact[]
+  eodReports             EodReport[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+
+  @@unique([organizationId, userId])
+}
+
+// -------------------------------------------------------------
+// 2. ROLES, TEAMS & HIERARCHY
+// -------------------------------------------------------------
+
+model Role {
+  id             String   @id @default(uuid())
+  organizationId String?
+  name           String   // Platform Super Admin, Org Owner, Admin / HR, Manager, Team Lead, Team Member, Log Approver, Target Editor
+  description    String?
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships    MembershipRole[]
+}
+
+model MembershipRole {
+  id           String @id @default(uuid())
+  membershipId String
+  roleId       String
+
+  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role         Role                   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId])
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String   // Alpha, Beta, Requirements, Leadership, People Ops
+  leadMembershipId String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        OrganizationMembership[] @relation("TeamMembers")
+  tickets        Ticket[]
+}
+
+// -------------------------------------------------------------
+// 3. ATTENDANCE MANAGEMENT
+// -------------------------------------------------------------
+
+model AttendanceSession {
+  id           String   @id @default(uuid())
+  membershipId String
+  workDate     String   // YYYY-MM-DD
+  checkInTime  String   // HH:mm or ISO
+  checkOutTime String?  // HH:mm or ISO
+  totalMinutes Int      @default(0)
+  status       String   @default("Present") // Present, Late, Holiday work, Missed check-out, On leave
+  isManual     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  membership   OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  breaks       AttendanceBreak[]
+}
+
+model AttendanceBreak {
+  id              String   @id @default(uuid())
+  sessionId       String
+  startTime       String   // HH:mm
+  endTime         String?  // HH:mm
+  durationMinutes Int      @default(0)
+  reason          String?
+
+  session         AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceCorrection {
+  id                     String   @id @default(uuid())
+  membershipId           String
+  workDate               String   // YYYY-MM-DD
+  correctionType         String   // Missed check-out, Wrong time, System issue
+  requestedTime          String   // e.g. "Check-out 18:40"
+  reason                 String
+  status                 String   @default("Pending") // Pending, Approved, Rejected
+  reviewedByMembershipId String?
+  reviewedAt             DateTime?
+  createdAt              DateTime @default(now())
+
+  membership             OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------
+// 4. TICKETS & SHARED WEIGHTAGES
+// -------------------------------------------------------------
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  clientName     String
+  description    String?
+  status         String   @default("Active")
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tickets        Ticket[]
+}
+
+model Ticket {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  projectId             String?
+  reference             String   // e.g. REQ-I3001
+  title                 String
+  description           String?
+  customerName          String
+  priority              String   @default("Medium") // Low, Medium, High, Critical
+  status                String   @default("To Do")  // Backlog, To Do, In Progress, On Hold, Under Review, Completed, Cancelled
+  plannedStartDate      String   // YYYY-MM-DD
+  plannedDueDate        String   // YYYY-MM-DD
+  actualStartDate       String?  // YYYY-MM-DD
+  completedDate         String?  // YYYY-MM-DD
+  totalEstimatedHours   Float    @default(0.0)
+  createdByMembershipId String?
+  teamId                String?
+  reassignmentCount     Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project               Project?                @relation(fields: [projectId], references: [id])
+  createdBy             OrganizationMembership? @relation("TicketCreator", fields: [createdByMembershipId], references: [id])
+  team                  Team?                   @relation(fields: [teamId], references: [id])
+  
+  assignments           TicketAssignment[]
+  activities            WorkLogActivity[]
+  blockers              Blocker[]
+  negativeImpacts       EmployeeNegativeImpact[]
+  history               TicketHistory[]
+  dependencies          TicketDependency[]      @relation("DependentOn")
+  dependents            TicketDependency[]      @relation("Dependencies")
+}
+
+model TicketDependency {
+  id                String @id @default(uuid())
+  ticketId          String
+  dependsOnTicketId String
+
+  ticket            Ticket @relation("Dependencies", fields: [ticketId], references: [id], onDelete: Cascade)
+  dependsOn         Ticket @relation("DependentOn", fields: [dependsOnTicketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, dependsOnTicketId])
+}
+
+model TicketAssignment {
+  id             String   @id @default(uuid())
+  ticketId       String
+  membershipId   String
+  allocatedHours Float    @default(0.0)
+  loggedHours    Float    @default(0.0)
+  status         String   @default("In Progress") // In Progress, Completed
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ticket         Ticket                 @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  membership     OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, membershipId])
+}
+
+model TicketHistory {
+  id           String   @id @default(uuid())
+  ticketId     String
+  actorName    String
+  action       String
+  details      String
+  createdAt    DateTime @default(now())
+
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------
+// 5. DAILY WORK LOGS & APPROVAL WORKFLOW
+// -------------------------------------------------------------
+
+model WorkLog {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  membershipId           String
+  workDate               String   // YYYY-MM-DD
+  submissionStatus       String   @default("Draft") // Draft, Submitted, Approved, Returned
+  submittedAt            DateTime?
+  reviewedByMembershipId String?
+  reviewedAt             DateTime?
+  reviewComments         String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership             OrganizationMembership  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  activities             WorkLogActivity[]
+  approvalEvents         WorkLogApprovalEvent[]
+
+  @@unique([membershipId, workDate])
+}
+
+model WorkLogActivity {
+  id              String   @id @default(uuid())
+  workLogId       String
+  ticketId        String?
+  activityType    String   // Requirement Analysis, Research & Development, Customer Discussion, Internal Discussion, UI/UX Design, Documentation, Review, Rework, Testing Support, Other
+  description     String
+  durationMinutes Int      @default(0)
+  startTime       String?  // HH:mm
+  endTime         String?  // HH:mm
+  progressStatus  String   @default("In Progress")
+  blockerFlag     Boolean  @default(false)
+  blockerId       String?
+  createdAt       DateTime @default(now())
+
+  workLog         WorkLog  @relation(fields: [workLogId], references: [id], onDelete: Cascade)
+  ticket          Ticket?  @relation(fields: [ticketId], references: [id])
+}
+
+model WorkLogApprovalEvent {
+  id           String   @id @default(uuid())
+  workLogId    String
+  actorName    String
+  action       String   // Submitted, Approved, Returned, Resubmitted
+  comments     String?
+  createdAt    DateTime @default(now())
+
+  workLog      WorkLog  @relation(fields: [workLogId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------
+// 6. BLOCKERS & ESCALATION
+// -------------------------------------------------------------
+
+model Blocker {
+  id                         String   @id @default(uuid())
+  organizationId             String
+  ticketId                   String?
+  reference                  String?  // e.g. REQ-I3005
+  title                      String
+  description                String
+  severity                   String   @default("Medium") // Low, Medium, High, Critical
+  raisedByMembershipId       String
+  responsibleLeadMembershipId String?
+  status                     String   @default("Raised") // Raised, Acknowledged, In Progress, Resolved, Reopened
+  resolutionNotes            String?
+  resolvedAt                 DateTime?
+  escalatedToManager         Boolean  @default(false)
+  escalatedToMembershipId    String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  organization               Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket                     Ticket?                 @relation(fields: [ticketId], references: [id])
+  raisedBy                   OrganizationMembership  @relation("BlockerRaiser", fields: [raisedByMembershipId], references: [id], onDelete: Cascade)
+  responsibleLead            OrganizationMembership? @relation("BlockerLead", fields: [responsibleLeadMembershipId], references: [id])
+  escalatedTo                OrganizationMembership? @relation("BlockerEscalated", fields: [escalatedToMembershipId], references: [id])
+  events                     BlockerEvent[]
+}
+
+model BlockerEvent {
+  id        String   @id @default(uuid())
+  blockerId String
+  actorName String
+  action    String   // Raised, Acknowledged, In Progress, Escalated, Resolved, Reopened
+  notes     String?
+  createdAt DateTime @default(now())
+
+  blocker   Blocker  @relation(fields: [blockerId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------
+// 7. LEAVE MANAGEMENT & HOLIDAYS
+// -------------------------------------------------------------
+
+model LeaveType {
+  id                String   @id @default(uuid())
+  organizationId    String
+  code              String   // CL, SL, EL, LOP, CO
+  name              String   // Casual Leave, Sick Leave, Earned Leave, Loss of Pay, Comp Off
+  quotaDays         Float    @default(0.0)
+  carryForwardDays  Float    @default(0.0)
+  colorHex          String   @default("#4F46E5")
+  isUnlimited       Boolean  @default(false)
+  isCustom          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  balances          LeaveBalance[]
+  requests          LeaveRequest[]
+
+  @@unique([organizationId, code])
+}
+
+model LeaveBalance {
+  id               String   @id @default(uuid())
+  membershipId     String
+  leaveTypeId      String
+  allocatedDays    Float    @default(0.0)
+  usedDays         Float    @default(0.0)
+  pendingDays      Float    @default(0.0)
+  year             Int      @default(2026)
+
+  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  leaveType        LeaveType              @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  membershipId           String
+  leaveTypeId            String
+  startDate              String   // YYYY-MM-DD
+  endDate                String   // YYYY-MM-DD
+  isHalfDay              Boolean  @default(false)
+  totalDays              Float    @default(1.0)
+  reason                 String
+  status                 String   @default("Pending") // Pending, Approved, Rejected, Cancelled
+  reviewedByMembershipId String?
+  reviewedAt             DateTime?
+  reviewComments         String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership             OrganizationMembership  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  leaveType              LeaveType               @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+}
+
+model Holiday {
+  id             String   @id @default(uuid())
+  organizationId String
+  holidayDate    String   // YYYY-MM-DD
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, holidayDate])
+}
+
+// -------------------------------------------------------------
+// 8. KPI CALCULATION, TARGET OVERRIDES & NEGATIVE IMPACTS
+// -------------------------------------------------------------
+
+model KpiCalculation {
+  id                         String   @id @default(uuid())
+  organizationId             String
+  membershipId               String
+  period                     String   // YYYY-MM
+  baseWorkingDays            Float    @default(22.0)
+  eligibleLeaveDays          Float    @default(0.0)
+  availableWorkingDays       Float    @default(22.0)
+  dailyHours                 Float    @default(8.0)
+  productivityFactor         Float    @default(90.0)
+  capacityFactor             Float    @default(100.0)
+  calculatedTargetHours      Float    @default(0.0)
+  overriddenTargetHours      Float?
+  effectiveTargetHours       Float    @default(0.0)
+  assignedWeightageHours     Float    @default(0.0)
+  completedWeightageHours    Float    @default(0.0)
+  capacityUtilizationPercent Float    @default(0.0)
+  deliveryCompletionPercent  Float    @default(0.0)
+  efficiencyPercent          Float    @default(0.0)
+  finalKpiScore              Float    @default(0.0)
+  finalKpiBand               String   @default("Proficient") // Superior (>=110%), Strong (>=100%), Proficient (>=90%), Developing (>=75%), Needs Focus (<75%)
+  isFinalized                Boolean  @default(false)
+  finalizedAt                DateTime?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  organization               Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership                 OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, period])
+}
+
+model TargetOverride {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  membershipId           String
+  period                 String   // e.g. "Nov 2026" or "2026-11"
+  calculatedTargetHours  Float
+  revisedTargetHours     Float
+  reason                 String
+  status                 String   @default("Pending") // Pending, Approved, Rejected
+  submittedByMembershipId String
+  reviewedByMembershipId String?
+  reviewedAt             DateTime?
+  createdAt              DateTime @default(now())
+
+  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership             OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+}
+
+model NegativeImpactRule {
+  id                       String   @id @default(uuid())
+  organizationId           String
+  category                 String   // Reassignment, Deadline Miss, Quality Issue, Rework, Late Submission
+  firstIncidentPercent     Float    @default(5.0)
+  secondIncidentPercent    Float    @default(10.0)
+  subsequentIncidentPercent Float   @default(10.0)
+  isCumulative             Boolean  @default(true)
+  isCapped                 Boolean  @default(false)
+  capPercent               Float?
+  createdAt                DateTime @default(now())
+
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, category])
+}
+
+model EmployeeNegativeImpact {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  membershipId           String
+  ticketId               String?
+  category               String   // Reassignment, Deadline Miss, Quality Issue, Rework, Late Submission
+  impactValue            Float    // e.g. 5% or 2 hours
+  valueType              String   @default("percentage") // percentage or fixed
+  basisRule              String
+  reason                 String
+  effectiveDate          String   // YYYY-MM-DD
+  appliedByMembershipId  String
+  status                 String   @default("Approved") // Pending, Approved, Reversed
+  reversalReason         String?
+  reversedByMembershipId String?
+  reversedAt             DateTime?
+  createdAt              DateTime @default(now())
+
+  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership             OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  ticket                 Ticket?                @relation(fields: [ticketId], references: [id])
+}
+
+// -------------------------------------------------------------
+// 9. AUTOMATED EOD REPORTING
+// -------------------------------------------------------------
+
+model EodReport {
+  id               String   @id @default(uuid())
+  organizationId   String
+  membershipId     String
+  reportDate       String   // YYYY-MM-DD
+  attendanceHours  Float    @default(0.0)
+  loggedHours      Float    @default(0.0)
+  submissionStatus String   @default("Submitted")
+  approvalStatus   String   @default("Pending")
+  planTomorrow     String?
+  recipients       String   // Comma separated names or emails
+  deliveryStatus   String   @default("Delivered") // Delivered, Failed, Pending
+  errorMessage     String?
+  sentAt           DateTime @default(now())
+  retryCount       Int      @default(0)
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, reportDate])
+}
+
+// -------------------------------------------------------------
+// 10. NOTIFICATIONS, AUDIT & PLATFORM / GOD MODE
+// -------------------------------------------------------------
+
+model Notification {
+  id                     String   @id @default(uuid())
+  organizationId         String
+  recipientMembershipId String?
+  recipientRoleScope     String?  // e.g. "lead manager", "hr", "owner"
+  title                  String
+  body                   String
+  targetModule           String?  // blockers, approvals, activities, tickets, leave, reports
+  targetEntityId         String?
+  isRead                 Boolean  @default(false)
+  createdAt              DateTime @default(now())
+
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipient              OrganizationMembership? @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorUserId    String?
+  actorMembershipId String?
+  actorName      String
+  module         String   // Approvals, Blockers, Tickets, KPI, Settings, Leave, Attendance
+  action         String
+  details        String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUser      User?                   @relation(fields: [actorUserId], references: [id])
+  actorMembership OrganizationMembership? @relation(fields: [actorMembershipId], references: [id])
+}
+
+model PlatformAuditLog {
+  id        String   @id @default(uuid())
+  actorName String
+  action    String
+  module    String   // Support, Organizations, Feature Flags, Health
+  createdAt DateTime @default(now())
+}
+
+model SupportSession {
+  id              String   @id @default(uuid())
+  organizationId  String
+  sessionCode     String   @unique // e.g. SS-118
+  reason          String
+  durationMinutes Int      @default(60)
+  status          String   @default("Closed") // Open, Closed
+  consentGivenBy  String   @default("Org owner")
+  startedAt       DateTime @default(now())
+  endedAt         DateTime?
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  key         String   @unique // gantt_drag, kpi_hierarchy, eod_summary_drafts, mobile_geo_checkin, saml_sso
+  name        String
+  description String?
+  isEnabled   Boolean  @default(true)
+  scope       String   @default("All plans") // All plans, Business and Enterprise, Enterprise beta, Opt-in per organization
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
