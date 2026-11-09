@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (error || !context) return error;
 
   const url = new URL(req.url);
-  const workDate = url.searchParams.get('date') || '2026-11-09';
+  const workDate = url.searchParams.get('date') || '2026-10-31';
 
   try {
     // Current user's sessions for the day

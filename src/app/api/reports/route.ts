@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   try {
     // 1. Attendance overview stats
     const attendanceCount = await prisma.attendanceSession.count({
-      where: { workDate: '2026-11-09' },
+      where: { workDate: '2026-10-31' },
     });
 
     // 2. Ticket weightages summary

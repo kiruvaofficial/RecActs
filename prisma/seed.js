@@ -114,7 +114,7 @@ async function main() {
         { id: 'srinath', name: 'Srinath', ini: 'SN', desig: 'Designer', team: 'Beta', leadId: 'rasiga', roles: ['Team Member'], status: 'Active', join: '2023-05-15', email: 'srinath@demo.recacts.app' },
         { id: 'karuppaiah', name: 'Karuppaiah', ini: 'KP', desig: 'Senior Designer', team: 'Beta', leadId: 'rasiga', roles: ['Team Member', 'Target Editor'], status: 'Active', join: '2022-09-12', email: 'karuppaiah@demo.recacts.app' },
         { id: 'dinesh', name: 'Dinesh Yadav', ini: 'DY', desig: 'Designer', team: 'Beta', leadId: 'rasiga', roles: ['Team Member'], status: 'Active', join: '2024-04-01', email: 'dinesh.yadav@demo.recacts.app' },
-        { id: 'madhan', name: 'Madhan R', ini: 'MR', desig: 'Associate Designer', team: 'Beta', leadId: 'rasiga', roles: ['Team Member'], status: 'Onboarding', join: '2026-11-02', email: 'madhan.r@demo.recacts.app' },
+        { id: 'madhan', name: 'Madhan R', ini: 'MR', desig: 'Associate Designer', team: 'Beta', leadId: 'rasiga', roles: ['Team Member'], status: 'Onboarding', join: '2026-10-01', email: 'madhan.r@demo.recacts.app' },
         { id: 'meena', name: 'Meena S', ini: 'MS', desig: 'HR Executive', team: 'People Ops', leadId: null, roles: ['Admin / HR'], status: 'Active', join: '2022-11-01', email: 'meena.s@demo.recacts.app' },
         { id: 'arun', name: 'Arun Kumar', ini: 'AK', desig: 'Director', team: 'Leadership', leadId: null, roles: ['Org Owner', 'Admin / HR'], status: 'Active', join: '2018-03-01', email: 'arun.kumar@demo.recacts.app' },
     ];
@@ -226,7 +226,7 @@ async function main() {
     }
     // Holidays
     const holidays = [
-        { d: '2026-11-20', n: "Founders' Day" },
+        { d: '2026-10-31', n: "Founders' Day" },
         { d: '2026-12-25', n: 'Christmas Day' },
         { d: '2027-01-01', n: "New Year's Day" },
         { d: '2027-01-15', n: 'Pongal' },
@@ -297,9 +297,9 @@ async function main() {
                 customerName: t.cust || 'BlindMatrix Client',
                 priority: t.est >= 50 ? 'Critical' : t.est >= 20 ? 'High' : 'Medium',
                 status: 'Completed',
-                plannedStartDate: '2026-11-02',
-                plannedDueDate: '2026-11-20',
-                completedDate: '2026-11-20',
+                plannedStartDate: '2026-10-01',
+                plannedDueDate: '2026-10-31',
+                completedDate: '2026-10-31',
                 totalEstimatedHours: t.est,
                 reassignmentCount: t.reassign,
                 teamId: teamId || null,
@@ -328,8 +328,8 @@ async function main() {
             customerName: 'Northwind Interiors',
             priority: 'High',
             status: 'In Progress',
-            plannedStartDate: '2026-11-10',
-            plannedDueDate: '2026-11-25',
+            plannedStartDate: '2026-10-10',
+            plannedDueDate: '2026-10-25',
             totalEstimatedHours: 22.0,
             reassignmentCount: 0,
             teamId: teamMap['Alpha'] || null,
@@ -409,7 +409,7 @@ async function main() {
         });
     }
     // 11. Work Logs for Today and Friday
-    const TODAY = '2026-11-09';
+    const TODAY = '2026-10-31';
     await prisma.workLog.create({
         data: {
             organizationId: org.id,
@@ -445,9 +445,9 @@ async function main() {
         data: {
             organizationId: org.id,
             membershipId: memberMap['hemanth'],
-            workDate: '2026-11-06',
+            workDate: '2026-10-24',
             submissionStatus: 'Submitted',
-            submittedAt: new Date('2026-11-06T18:52:00Z'),
+            submittedAt: new Date('2026-10-24T18:52:00Z'),
             activities: {
                 create: [
                     {
@@ -496,14 +496,14 @@ async function main() {
         data: {
             organizationId: org.id,
             membershipId: memberMap['madhan'],
-            period: 'Nov 2026',
+            period: 'Oct 2026',
             calculatedTargetHours: 158.0,
             revisedTargetHours: 158.0,
             reason: 'Standard monthly weightage target allocation',
             status: 'Approved',
             submittedByMembershipId: memberMap['rasiga'],
             reviewedByMembershipId: memberMap['don'],
-            reviewedAt: new Date('2026-11-03T11:00:00Z'),
+            reviewedAt: new Date('2026-10-20T11:00:00Z'),
         },
     });
     // 14. Negative Impact Records for Reassigned Tickets (5% and 10%)
@@ -517,7 +517,7 @@ async function main() {
             valueType: 'percentage',
             basisRule: 'First reassignment: 5% of ticket weightage (6.2h)',
             reason: '1st reassignment on LA-I6923 (125h ticket)',
-            effectiveDate: '2026-11-04',
+            effectiveDate: '2026-10-04',
             appliedByMembershipId: memberMap['kiru'],
             status: 'Approved',
         },
@@ -532,7 +532,7 @@ async function main() {
             valueType: 'percentage',
             basisRule: 'First reassignment: 5% of ticket weightage (3.5h)',
             reason: '1st reassignment on REQ-I2711 (70h ticket)',
-            effectiveDate: '2026-11-05',
+            effectiveDate: '2026-10-05',
             appliedByMembershipId: memberMap['kiru'],
             status: 'Approved',
         },
@@ -547,7 +547,7 @@ async function main() {
             valueType: 'percentage',
             basisRule: 'First reassignment: 5% of ticket weightage (6.0h)',
             reason: '1st reassignment on REQ-12883 (120h ticket)',
-            effectiveDate: '2026-11-06',
+            effectiveDate: '2026-10-24',
             appliedByMembershipId: memberMap['rasiga'],
             status: 'Approved',
         },

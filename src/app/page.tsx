@@ -264,7 +264,7 @@ export default function RecActsFullyFunctionalApp() {
       setAuthChecking(false);
 
       // 2. Attendance Status
-      const attRes = await fetch('/api/attendance/status?date=2026-11-09');
+      const attRes = await fetch('/api/attendance/status?date=2026-10-31');
       if (attRes.ok) {
         const attData = await attRes.json();
         setAttendance(attData);
@@ -278,7 +278,7 @@ export default function RecActsFullyFunctionalApp() {
       }
 
       // 4. Work Logs
-      const wlRes = await fetch('/api/work-logs?date=2026-11-09');
+      const wlRes = await fetch('/api/work-logs?date=2026-10-31');
       if (wlRes.ok) {
         const wlData = await wlRes.json();
         if (wlData.workLog && wlData.workLog.activities?.length > 0) {
@@ -453,7 +453,7 @@ export default function RecActsFullyFunctionalApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          workDate: '2026-11-09',
+          workDate: '2026-10-31',
           activities: workLog.activities,
         }),
       });
@@ -471,7 +471,7 @@ export default function RecActsFullyFunctionalApp() {
       const res = await fetch('/api/work-logs/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workDate: '2026-11-09' }),
+        body: JSON.stringify({ workDate: '2026-10-31' }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -619,7 +619,7 @@ export default function RecActsFullyFunctionalApp() {
       const res = await fetch('/api/eod/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workDate: '2026-11-09' }),
+        body: JSON.stringify({ workDate: '2026-10-31' }),
       });
       if (res.ok) {
         showToast('EOD summary report generated and dispatched!');
@@ -1628,7 +1628,7 @@ export default function RecActsFullyFunctionalApp() {
                     onClick={() => {
                       setModalType('correctionModal');
                       setModalData({
-                        workDate: '2026-11-09',
+                        workDate: '2026-10-31',
                         correctionType: 'Missed check-out',
                         requestedTime: 'Check-out 18:30',
                         reason: '',
@@ -2252,8 +2252,8 @@ export default function RecActsFullyFunctionalApp() {
                     setModalType('applyLeave');
                     setModalData({
                       typeCode: 'CL',
-                      startDate: '2026-11-16',
-                      endDate: '2026-11-16',
+                      startDate: '2026-10-16',
+                      endDate: '2026-10-16',
                       totalDays: 1,
                       reason: '',
                     });
@@ -2447,7 +2447,7 @@ export default function RecActsFullyFunctionalApp() {
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 mt-1">
-                        Department: {kpiData.individual.department} • Period: {kpiData.settings?.month || 'November 2026'}
+                        Department: {kpiData.individual.department} • Period: {kpiData.settings?.month || 'October 2026'}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -2645,7 +2645,7 @@ export default function RecActsFullyFunctionalApp() {
                 <div className="modern-card p-5 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <h3 className="font-bold text-sm">Completed Ticket Deliveries (November 2026)</h3>
+                      <h3 className="font-bold text-sm">Completed Ticket Deliveries ({kpiData?.settings?.month || 'October 2026'})</h3>
                       <p className="text-[11px] text-slate-500">
                         Full dataset of 31 completed requirement tickets with estimated weightage, reassignment deductions, and variance.
                       </p>
@@ -2728,7 +2728,7 @@ export default function RecActsFullyFunctionalApp() {
                       <div className="divide-y divide-slate-100 dark:divide-white/[0.06] text-xs">
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Reporting Month</span>
-                          <span className="font-bold">{kpiData?.settings?.month || 'November 2026'}</span>
+                          <span className="font-bold">{kpiData?.settings?.month || 'October 2026'}</span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Working Days in Month</span>
