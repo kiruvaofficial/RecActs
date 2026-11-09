@@ -8,6 +8,8 @@ node_modules/
 .env*.local
 .env.production
 .env.development
+vercel.env
+*.env
 
 # Next.js build output
 .next/
