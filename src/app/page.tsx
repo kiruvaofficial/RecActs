@@ -40,6 +40,7 @@ import {
   Table as TableIcon,
   Flame,
   ArrowUpRight,
+  ArrowDownRight,
   CheckCheck,
   RotateCcw,
   Sliders,
@@ -302,7 +303,7 @@ export default function RecActsFullyFunctionalApp() {
       }
 
       // 9. KPI Scorecard
-      const kpiRes = await fetch('/api/kpi/calculate?period=2026-11');
+      const kpiRes = await fetch('/api/kpi/calculate?period=2026-10');
       if (kpiRes.ok) {
         const kData = await kpiRes.json();
         setKpiData(kData);
@@ -985,231 +986,385 @@ export default function RecActsFullyFunctionalApp() {
           {/* ========================================================================= */}
           {/* 1. VIEW: DASHBOARD OVERVIEW */}
           {/* ========================================================================= */}
-          {activeTab === 'dash' && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              {/* Sprint Hero Banner */}
-              <div className="modern-card p-6 relative overflow-hidden bg-gradient-to-r from-indigo-900/10 via-purple-900/5 to-transparent border-indigo-500/20">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="pill-badge bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-bold">
-                        Sprint 46 • Day 6 of 10
-                      </span>
-                      <span className="text-xs text-slate-500">• Release 7.4 Freeze in 11 days</span>
-                    </div>
-                    <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                      Welcome back, {currentUser?.name || 'User'}
-                    </h1>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {currentUser?.role || role} • {currentUser?.team || 'Core'} Team • All calculations synchronized with {organization?.name || 'BlindMatrix'} tenant policy
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      onClick={handleGenerateEod}
-                      className="btn-modern-secondary px-3 py-2 text-xs flex items-center gap-1.5"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Trigger EOD Mailer</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('activities')}
-                      className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Log Daily Effort</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+          {activeTab === 'dash' && (() => {
+            // Resolve KPI for current user persona or default individual
+            const kpiIndividual =
+              kpiData?.staffKpis?.find(
+                (s: any) =>
+                  s.staffId === currentUser?.id ||
+                  (currentUser?.name && s.name?.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0]))
+              ) ||
+              kpiData?.individual ||
+              kpiData?.staffKpis?.[0];
 
-              {/* 4 Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="modern-card p-5">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    <span className="font-semibold uppercase tracking-wider text-[10px]">November KPI</span>
-                    <span className="pill-badge bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      Strong
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">
-                      102.4%
-                    </span>
-                    <span className="text-xs text-emerald-500 font-semibold flex items-center">
-                      <ArrowUpRight className="w-3 h-3" /> +2.4%
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Effective Target: 129.6h</span>
-                    <span>Achieved: 132.8h</span>
-                  </div>
-                  <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-full rounded-full" style={{ width: '100%' }} />
-                  </div>
-                </div>
+            const kpiAchieved = kpiIndividual?.achievedWeightageNet ?? 0;
+            const kpiTarget = kpiIndividual?.targetWeightage ?? 158;
+            const kpiPercentNum = kpiIndividual?.achievementPercent != null
+              ? kpiIndividual.achievementPercent * 100
+              : (kpiTarget > 0 ? (kpiAchieved / kpiTarget) * 100 : 0);
+            const kpiPercentStr = kpiIndividual?.achievementDisplay || `${kpiPercentNum.toFixed(1)}%`;
+            const kpiRating = kpiIndividual?.rating || (kpiPercentNum >= 120 ? 'Excellent' : kpiPercentNum >= 95 ? 'Good' : kpiPercentNum >= 75 ? 'Average' : 'Needs Improvement');
+            const kpiMonth = kpiData?.settings?.month || 'October 2026';
 
-                <div className="modern-card p-5">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    <span className="font-semibold uppercase tracking-wider text-[10px]">Attendance Today</span>
-                    <span className="pill-badge bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      Present
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold tracking-tight">5h 10m</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>In: {attendance.checkInTime || '08:50'}</span>
-                    <span className="text-indigo-400 font-semibold">Active Session</span>
-                  </div>
-                  <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: '64%' }} />
-                  </div>
-                </div>
+            const ratingBadgeClass =
+              kpiRating === 'Excellent'
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                : kpiRating === 'Good'
+                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                : kpiRating === 'Average'
+                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                : 'bg-rose-500/15 text-rose-400 border border-rose-500/20';
 
-                <div className="modern-card p-5">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    <span className="font-semibold uppercase tracking-wider text-[10px]">Logged Effort</span>
-                    <span className="pill-badge bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
-                      2 Activities
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold tracking-tight">2h 15m</span>
-                    <span className="text-xs text-amber-500 font-semibold">Draft</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Unallocated: 2h 55m</span>
-                    <span>43% of attendance</span>
-                  </div>
-                  <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-indigo-500 h-full rounded-full" style={{ width: '43%' }} />
-                  </div>
-                </div>
+            // Resolve Attendance Today
+            const totalAttMins = attendance?.totalMinutes || 0;
+            const attH = Math.floor(totalAttMins / 60);
+            const attM = totalAttMins % 60;
+            const attFormatted = totalAttMins > 0 ? `${attH}h ${attM}m` : (attendance?.isCheckedIn ? 'Active (0m)' : '0h 0m');
+            const isAttActive = Boolean(attendance?.isCheckedIn);
+            const attProgressPct = Math.min(100, Math.round((totalAttMins / 480) * 100));
 
-                <div className="modern-card p-5">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    <span className="font-semibold uppercase tracking-wider text-[10px]">Action Queue</span>
-                    <span className="pill-badge bg-rose-500/15 text-rose-600 dark:text-rose-400">
-                      1 Critical
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold tracking-tight text-rose-600 dark:text-rose-400">
-                      4 Pending
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Approvals queue: 4</span>
-                    <span className="text-rose-500 font-medium">B-105 Needs lead</span>
-                  </div>
-                  <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-rose-500 h-full rounded-full" style={{ width: '80%' }} />
-                  </div>
-                </div>
-              </div>
+            // Resolve Logged Effort
+            const activitiesList = workLog?.activities || [];
+            const totalLoggedMins = activitiesList.reduce((acc: number, a: any) => acc + (Number(a.durationMinutes) || 0), 0);
+            const logH = Math.floor(totalLoggedMins / 60);
+            const logM = totalLoggedMins % 60;
+            const logFormatted = `${logH}h ${logM}m`;
+            const unallocMins = Math.max(0, totalAttMins - totalLoggedMins);
+            const unallocH = Math.floor(unallocMins / 60);
+            const unallocM = unallocMins % 60;
+            const effortPctOfAtt = totalAttMins > 0 ? Math.min(100, Math.round((totalLoggedMins / totalAttMins) * 100)) : 0;
+            const logStatus = workLog?.submissionStatus || 'Draft';
 
-              {/* Sprint 46 Priority Requirements & Team Shift Monitor */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 modern-card p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-sm tracking-tight">Sprint 46 Priority Requirements</h3>
-                      <p className="text-xs text-slate-400">Shared weightage allocations and deliverable deadlines</p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('tickets')}
-                      className="text-xs text-indigo-500 font-semibold hover:underline flex items-center gap-1"
-                    >
-                      <span>Explore all {tickets.length} tickets</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+            // Resolve Deliverables (for Members) or Action Queue (for Leads/Managers/Admins)
+            const isManagementRole =
+              ['lead', 'manager', 'hr', 'owner', 'god'].includes(role) ||
+              currentUser?.role?.toLowerCase().includes('lead') ||
+              currentUser?.role?.toLowerCase().includes('manager') ||
+              currentUser?.role?.toLowerCase().includes('director') ||
+              currentUser?.role?.toLowerCase().includes('admin');
 
-                  <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                    {tickets.slice(0, 4).map((t) => (
-                      <div key={t.id} className="py-3 flex items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">{t.ref}</span>
-                            <span className="text-xs font-semibold">{t.title}</span>
-                          </div>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                            <span>Client: <strong className="text-slate-300">{t.customer}</strong></span>
-                            <span>•</span>
-                            <span>Total: <strong className="text-indigo-400">{t.totalWeightage}h</strong></span>
-                            <span>•</span>
-                            <span>
-                              Assignees: {t.allocations?.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ')}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right flex-none">
-                          <span
-                            className={`pill-badge ${
-                              t.priority === 'Critical'
-                                ? 'bg-rose-500/15 text-rose-500 border border-rose-500/20'
-                                : t.priority === 'High'
-                                ? 'bg-amber-500/15 text-amber-500 border border-amber-500/20'
-                                : 'bg-slate-500/10 text-slate-400'
-                            }`}
-                          >
-                            {t.priority}
-                          </span>
-                          <p className="text-[10px] text-slate-400 mt-1 font-mono">Due {t.plannedDue}</p>
-                        </div>
+            const pendingApprovalsCount = approvals?.filter((a: any) => a.submissionStatus === 'Submitted').length || 0;
+            const openBlockers = blockers?.filter((b: any) => b.status === 'Raised' || b.status !== 'Resolved') || [];
+            const openBlockersCount = openBlockers.length;
+
+            const ticketsCompletedCount = kpiIndividual?.ticketsCompleted ?? 0;
+            const ticketsAssignedCount = kpiIndividual?.ticketsAssigned ?? 0;
+            const estHrs = kpiIndividual?.estHrsCompleted ?? 0;
+            const actHrs = kpiIndividual?.actualHrsCompleted ?? 0;
+            const effPercent = kpiIndividual?.efficiencyPercent != null
+              ? (kpiIndividual.efficiencyPercent * 100).toFixed(1)
+              : (actHrs > 0 ? ((estHrs / actHrs) * 100).toFixed(1) : '100.0');
+
+            // Priority Tickets filtered for current user persona
+            const myAssignedTickets = tickets.filter((t: any) =>
+              t.allocations?.some((a: any) =>
+                a.memberId === currentUser?.id ||
+                (currentUser?.name && a.memberName?.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0]))
+              )
+            );
+            const displayTickets = myAssignedTickets.length > 0
+              ? [...myAssignedTickets, ...tickets.filter((t: any) => !myAssignedTickets.some((m: any) => m.id === t.id))].slice(0, 4)
+              : tickets.slice(0, 4);
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                {/* Sprint Hero Banner */}
+                <div className="modern-card p-6 relative overflow-hidden bg-gradient-to-r from-indigo-900/10 via-purple-900/5 to-transparent border-indigo-500/20">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="pill-badge bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-bold">
+                          Sprint 46 • Day 6 of 10
+                        </span>
+                        <span className="text-xs text-slate-500">• Release 7.4 Freeze in 11 days</span>
                       </div>
-                    ))}
+                      <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+                        Welcome back, {currentUser?.name || 'User'}
+                      </h1>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {currentUser?.role || role} • {currentUser?.team || 'Core'} Team • All calculations synchronized with {organization?.name || 'BlindMatrix'} tenant policy
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        onClick={handleGenerateEod}
+                        className="btn-modern-secondary px-3 py-2 text-xs flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Trigger EOD Mailer</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('activities')}
+                        className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Log Daily Effort</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="modern-card p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-sm tracking-tight">Team Shift Monitor</h3>
-                      <p className="text-xs text-slate-400">Live attendance for Alpha & Beta</p>
+                {/* 4 Metric Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Card 1: Real Monthly KPI */}
+                  <div className="modern-card p-5">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      <span className="font-semibold uppercase tracking-wider text-[10px]">
+                        {kpiMonth ? `${kpiMonth.split(' ')[0]} KPI` : 'October KPI'}
+                      </span>
+                      <span className={`pill-badge text-[11px] font-bold px-2 py-0.5 ${ratingBadgeClass}`}>
+                        {kpiRating}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => setActiveTab('attendance')}
-                      className="text-xs text-indigo-500 font-semibold hover:underline"
-                    >
-                      Shift board →
-                    </button>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">
+                        {kpiPercentStr}
+                      </span>
+                      <span className={`text-xs font-semibold flex items-center ${kpiPercentNum >= 100 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        {kpiPercentNum >= 100 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {kpiPercentNum >= 100 ? `+${(kpiPercentNum - 100).toFixed(1)}%` : `${(kpiPercentNum - 100).toFixed(1)}%`}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Effective Target: {kpiTarget}h</span>
+                      <span className="text-slate-300 font-medium">Achieved: {kpiAchieved}h</span>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          kpiRating === 'Excellent'
+                            ? 'bg-gradient-to-r from-indigo-500 to-emerald-500'
+                            : kpiRating === 'Good'
+                            ? 'bg-gradient-to-r from-indigo-500 to-blue-500'
+                            : kpiRating === 'Average'
+                            ? 'bg-gradient-to-r from-amber-500 to-yellow-500'
+                            : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(8, Math.round(kpiPercentNum)))}%` }}
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2.5">
-                    {attendance.teamAttendance?.slice(0, 5).map((m: any) => (
-                      <div key={m.id} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 font-bold text-[10px] flex items-center justify-center">
-                            {m.initials}
-                          </div>
-                          <div>
-                            <p className="font-semibold">{m.name}</p>
-                            <p className="text-[10px] text-slate-400">{m.team} • {m.designation}</p>
-                          </div>
-                        </div>
-                        <span
-                          className={`pill-badge ${
-                            m.status === 'Present'
-                              ? 'bg-emerald-500/15 text-emerald-500'
-                              : m.status === 'Late'
-                              ? 'bg-amber-500/15 text-amber-500'
-                              : m.status === 'On leave'
-                              ? 'bg-purple-500/15 text-purple-400'
-                              : 'bg-slate-500/10 text-slate-400'
-                          }`}
-                        >
-                          {m.status} {m.checkIn !== '—' ? `(${m.checkIn})` : ''}
+                  {/* Card 2: Real Live Attendance */}
+                  <div className="modern-card p-5">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      <span className="font-semibold uppercase tracking-wider text-[10px]">Attendance Today</span>
+                      <span className={`pill-badge ${isAttActive ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : totalAttMins > 0 ? 'bg-indigo-500/15 text-indigo-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                        {isAttActive ? 'Present' : totalAttMins > 0 ? 'Completed' : 'Not Checked In'}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold tracking-tight">{attFormatted}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>In: {attendance.checkInTime || '—'}</span>
+                      <span className={isAttActive ? 'text-indigo-400 font-semibold' : 'text-slate-400'}>
+                        {isAttActive ? 'Active Session' : totalAttMins > 0 ? 'Shift Concluded' : 'Pending Check-In'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${isAttActive ? 'bg-emerald-500' : totalAttMins > 0 ? 'bg-indigo-500' : 'bg-slate-600'}`}
+                        style={{ width: `${Math.min(100, Math.max(isAttActive ? 12 : 0, attProgressPct))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card 3: Real Logged Effort */}
+                  <div className="modern-card p-5">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      <span className="font-semibold uppercase tracking-wider text-[10px]">Logged Effort</span>
+                      <span className="pill-badge bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                        {activitiesList.length} {activitiesList.length === 1 ? 'Activity' : 'Activities'}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-extrabold tracking-tight">{logFormatted}</span>
+                      <span className={`text-xs font-semibold ${
+                        logStatus === 'Approved' ? 'text-emerald-500' :
+                        logStatus === 'Submitted' ? 'text-blue-500' :
+                        'text-amber-500'
+                      }`}>
+                        {logStatus}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Unallocated: {unallocH}h {unallocM}m</span>
+                      <span>{effortPctOfAtt}% of attendance</span>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${effortPctOfAtt >= 85 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${Math.min(100, Math.max(activitiesList.length > 0 ? 10 : 0, effortPctOfAtt))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card 4: Persona-Aware Deliverables (Members) vs Action Queue (Management) */}
+                  {isManagementRole ? (
+                    <div className="modern-card p-5">
+                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        <span className="font-semibold uppercase tracking-wider text-[10px]">Action Queue</span>
+                        <span className={`pill-badge ${openBlockersCount > 0 ? 'bg-rose-500/15 text-rose-500' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                          {openBlockersCount > 0 ? `${openBlockersCount} Blockers` : 'All Clear'}
                         </span>
                       </div>
-                    ))}
+                      <div className="flex items-baseline gap-2">
+                        <span className={`text-3xl font-extrabold tracking-tight ${pendingApprovalsCount > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                          {pendingApprovalsCount} Pending
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Approvals queue: {pendingApprovalsCount}</span>
+                        <span className={openBlockersCount > 0 ? 'text-rose-500 font-medium' : 'text-slate-400'}>
+                          {openBlockers[0] ? `${openBlockers[0].reference || 'B-101'} Needs lead` : 'No open blockers'}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${pendingApprovalsCount > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${pendingApprovalsCount > 0 ? Math.min(100, pendingApprovalsCount * 25) : 5}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="modern-card p-5">
+                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        <span className="font-semibold uppercase tracking-wider text-[10px]">Sprint Deliverables</span>
+                        <span className="pill-badge bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                          {ticketsCompletedCount} / {ticketsAssignedCount} Done
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-extrabold tracking-tight text-emerald-500">
+                          {effPercent}%
+                        </span>
+                        <span className="text-xs text-slate-400 font-semibold">Efficiency</span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Est: {estHrs}h • Act: {actHrs}h</span>
+                        <span className={kpiIndividual?.reassignedTickets ? 'text-amber-400 font-medium' : 'text-emerald-400 font-medium'}>
+                          {kpiIndividual?.reassignedTickets ? `${kpiIndividual.reassignedTickets} Reassigned` : 'Clean Delivery'}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-white/[0.06] h-1.5 rounded-full mt-2 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full"
+                          style={{ width: `${ticketsAssignedCount > 0 ? Math.min(100, Math.round((ticketsCompletedCount / ticketsAssignedCount) * 100)) : 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sprint Priority Requirements & Team Shift Monitor */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 modern-card p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-sm tracking-tight">Sprint 46 Priority Requirements</h3>
+                        <p className="text-xs text-slate-400">Shared weightage allocations and deliverable deadlines</p>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('tickets')}
+                        className="text-xs text-indigo-500 font-semibold hover:underline flex items-center gap-1"
+                      >
+                        <span>Explore all {tickets.length} tickets</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                      {displayTickets.map((t: any) => (
+                        <div key={t.id} className="py-3 flex items-center justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">{t.ref}</span>
+                              <span className="text-xs font-semibold">{t.title}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                              <span>Client: <strong className="text-slate-300">{t.customer}</strong></span>
+                              <span>•</span>
+                              <span>Total: <strong className="text-indigo-400">{t.totalWeightage}h</strong></span>
+                              <span>•</span>
+                              <span>
+                                Assignees: {t.allocations?.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ') || 'Unassigned'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right flex-none">
+                            <span
+                              className={`pill-badge ${
+                                t.priority === 'Critical'
+                                  ? 'bg-rose-500/15 text-rose-500 border border-rose-500/20'
+                                  : t.priority === 'High'
+                                  ? 'bg-amber-500/15 text-amber-500 border border-amber-500/20'
+                                  : 'bg-slate-500/10 text-slate-400'
+                              }`}
+                            >
+                              {t.priority}
+                            </span>
+                            <p className="text-[10px] text-slate-400 mt-1 font-mono">Due {t.plannedDue}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="modern-card p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-sm tracking-tight">Team Shift Monitor</h3>
+                        <p className="text-xs text-slate-400">Live attendance for {currentUser?.team || 'Alpha & Beta'}</p>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('attendance')}
+                        className="text-xs text-indigo-500 font-semibold hover:underline"
+                      >
+                        Shift board →
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {attendance.teamAttendance && attendance.teamAttendance.length > 0 ? (
+                        attendance.teamAttendance.slice(0, 5).map((m: any) => (
+                          <div key={m.id} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02]">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 font-bold text-[10px] flex items-center justify-center">
+                                {m.initials}
+                              </div>
+                              <div>
+                                <p className="font-semibold">{m.name}</p>
+                                <p className="text-[10px] text-slate-400">{m.team} • {m.designation}</p>
+                              </div>
+                            </div>
+                            <span
+                              className={`pill-badge ${
+                                m.status === 'Present'
+                                  ? 'bg-emerald-500/15 text-emerald-500'
+                                  : m.status === 'Late'
+                                  ? 'bg-amber-500/15 text-amber-500'
+                                  : m.status === 'On leave'
+                                  ? 'bg-purple-500/15 text-purple-400'
+                                  : 'bg-slate-500/10 text-slate-400'
+                              }`}
+                            >
+                              {m.status} {m.checkIn && m.checkIn !== '—' ? `(${m.checkIn})` : ''}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-6 text-xs text-slate-500 space-y-1">
+                          <p>No shift activity recorded yet today</p>
+                          <p className="text-[11px] text-slate-600">Team members will appear here upon check-in</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ========================================================================= */}
           {/* 2. VIEW: DAILY WORK LOGS */}

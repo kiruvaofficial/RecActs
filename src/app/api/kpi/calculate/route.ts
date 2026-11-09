@@ -219,7 +219,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       period,
       settings: {
-        month: 'November 2026',
+        month: period === '2026-10' ? 'October 2026' : (period === '2026-11' ? 'November 2026' : 'October 2026'),
         workingDays: settings.workingDays,
         dailyHours: settings.dailyHours,
         productiveFactor: settings.productiveFactor,

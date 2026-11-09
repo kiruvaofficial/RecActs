@@ -27,49 +27,53 @@ export async function GET(req: NextRequest) {
     const activeSession = mySessions.find((s) => !s.checkOutTime);
     const totalMinutes = mySessions.reduce((acc, s) => acc + s.totalMinutes, 0);
 
-    // Team members attendance if Lead, Manager, HR, Owner
+    // Team members attendance (all members for leads/managers/hr/owner, or same-team colleagues for members)
     let teamAttendance: any[] = [];
-    if (['lead', 'manager', 'hr', 'owner'].includes(context.role)) {
-      const allMembers = await prisma.organizationMembership.findMany({
-        where: { organizationId: context.organizationId },
-        include: {
-          user: true,
-          team: true,
-          attendanceSessions: {
-            where: { workDate },
-          },
-          leaveRequests: {
-            where: {
-              status: 'Approved',
-              startDate: { lte: workDate },
-              endDate: { gte: workDate },
-            },
-            include: { leaveType: true },
-          },
-        },
-      });
-
-      teamAttendance = allMembers.map((m) => {
-        const session = m.attendanceSessions[0];
-        const onLeave = m.leaveRequests.length > 0;
-        let st = 'Not checked in';
-        if (onLeave) st = 'On leave';
-        else if (session) st = session.status;
-
-        return {
-          id: m.id,
-          name: m.user.name,
-          initials: m.user.initials,
-          designation: m.designation,
-          team: m.team?.name || '—',
-          status: st,
-          checkIn: session?.checkInTime || '—',
-          checkOut: session?.checkOutTime || '—',
-          totalMinutes: session?.totalMinutes || 0,
-          leaveType: onLeave ? m.leaveRequests[0].leaveType.code : null,
-        };
-      });
+    const teamFilter: any = { organizationId: context.organizationId };
+    if (context.role === 'member' && context.membership?.teamId) {
+      teamFilter.teamId = context.membership.teamId;
     }
+
+    const allMembers = await prisma.organizationMembership.findMany({
+      where: teamFilter,
+      include: {
+        user: true,
+        team: true,
+        attendanceSessions: {
+          where: { workDate },
+        },
+        leaveRequests: {
+          where: {
+            status: 'Approved',
+            startDate: { lte: workDate },
+            endDate: { gte: workDate },
+          },
+          include: { leaveType: true },
+        },
+      },
+      orderBy: { user: { name: 'asc' } },
+    });
+
+    teamAttendance = allMembers.map((m) => {
+      const session = m.attendanceSessions[0];
+      const onLeave = m.leaveRequests.length > 0;
+      let st = 'Not checked in';
+      if (onLeave) st = 'On leave';
+      else if (session) st = session.status;
+
+      return {
+        id: m.id,
+        name: m.user.name,
+        initials: m.user.initials,
+        designation: m.designation,
+        team: m.team?.name || '—',
+        status: st,
+        checkIn: session?.checkInTime || '—',
+        checkOut: session?.checkOutTime || '—',
+        totalMinutes: session?.totalMinutes || 0,
+        leaveType: onLeave ? m.leaveRequests[0].leaveType.code : null,
+      };
+    });
 
     return NextResponse.json({
       workDate,
