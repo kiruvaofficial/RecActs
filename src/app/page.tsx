@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import {
   LayoutDashboard,
   Clock,
@@ -57,54 +58,31 @@ import {
 export default function RecActsFullyFunctionalApp() {
   // Navigation & Role State
   const [activeTab, setActiveTab] = useState<string>('dash');
-  const [role, setRole] = useState<string>('lead'); // member, lead, manager, hr, owner, god
+  const [role, setRole] = useState<string>('member'); // member, lead, manager, hr, owner, god
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ticketViewMode, setTicketViewMode] = useState<'board' | 'table'>('board');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Core API Data State
-  const [currentUser, setCurrentUser] = useState<any>({
-    name: 'Kiruvantham',
-    initials: 'KV',
-    email: 'kiruvantham@demo.recacts.app',
-    role: 'Team Lead',
-    team: 'Alpha',
-  });
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Core API Data State (No static mock data)
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [organization, setOrganization] = useState<any>(null);
   const [attendance, setAttendance] = useState<any>({
-    isCheckedIn: true,
-    totalMinutes: 310,
-    checkInTime: '08:50',
-    status: 'Present',
+    isCheckedIn: false,
+    totalMinutes: 0,
+    checkInTime: null,
+    status: 'Not Checked In',
     teamAttendance: [],
   });
   const [corrections, setCorrections] = useState<any[]>([]);
   const [workLog, setWorkLog] = useState<any>({
     submissionStatus: 'Draft',
-    activities: [
-      {
-        id: 'act-1',
-        ticketRef: 'REQ-I3001',
-        activityType: 'Requirement Analysis',
-        description: 'Mapped CSV columns to quote line fields; listed 6 validation rules',
-        startTime: '09:30',
-        endTime: '11:15',
-        durationMinutes: 105,
-        progressStatus: 'In Progress',
-        blockerFlag: false,
-      },
-      {
-        id: 'act-2',
-        ticketRef: 'REQ-I3002',
-        activityType: 'Customer Discussion',
-        description: 'Call with Acme plant lead on cut-width tolerance',
-        startTime: '11:30',
-        endTime: '12:30',
-        durationMinutes: 60,
-        progressStatus: 'In Progress',
-        blockerFlag: false,
-      },
-    ],
+    activities: [],
     history: [],
   });
   const [tickets, setTickets] = useState<any[]>([]);
@@ -157,6 +135,7 @@ export default function RecActsFullyFunctionalApp() {
   const handleSupabaseLogin = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
     if (e) e.preventDefault();
     setLoginLoading(true);
+    setLoginError(null);
     const targetEmail = customEmail || loginEmail;
     const targetPass = customPass || loginPassword;
 
@@ -168,13 +147,28 @@ export default function RecActsFullyFunctionalApp() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        setIsAuthenticated(true);
+        setRole(data.activeRole || 'member');
+        setCurrentUser({
+          id: data.activeMembership?.id || data.user.id,
+          userId: data.user.id,
+          name: data.user.name,
+          initials: data.user.initials,
+          email: data.user.email,
+          role: data.activeMembership?.designation || (data.activeRole ? data.activeRole.toUpperCase() : 'Member'),
+          team: data.activeMembership?.team?.name || 'BlindMatrix',
+          isPlatformAdmin: data.user.isPlatformAdmin,
+        });
+        if (data.organization) setOrganization(data.organization);
         setModalType(null);
-        showToast(`Authenticated with Supabase as ${data.user.name} (${data.activeRole.toUpperCase()})`);
-        loadAllData();
+        showToast(`Authenticated as ${data.user.name} (${(data.activeRole || 'member').toUpperCase()})`);
+        await loadAllData();
       } else {
+        setLoginError(data.error || 'Authentication failed');
         showToast(data.error || 'Authentication failed');
       }
     } catch (err: any) {
+      setLoginError('Network error during Supabase login');
       showToast('Network error during Supabase login');
     } finally {
       setLoginLoading(false);
@@ -184,27 +178,22 @@ export default function RecActsFullyFunctionalApp() {
   const handleSupabaseLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      showToast('Logged out of Supabase session');
-      setModalType('loginModal');
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Role Switcher Handler
-  const handleRoleSwitch = async (newRole: string) => {
-    setRole(newRole);
-    try {
-      const res = await fetch('/api/auth/switch-role', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole }),
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setRole('member');
+      setAttendance({
+        isCheckedIn: false,
+        totalMinutes: 0,
+        checkInTime: null,
+        status: 'Not Checked In',
+        teamAttendance: [],
       });
-      const data = await res.json();
-      if (data.success) {
-        showToast(`Switched active view to ${newRole.toUpperCase()} mode`);
-        loadAllData();
-      }
+      setWorkLog({
+        submissionStatus: 'Draft',
+        activities: [],
+        history: [],
+      });
+      showToast('Signed out of session');
     } catch (err) {
       console.error(err);
     }
@@ -213,21 +202,39 @@ export default function RecActsFullyFunctionalApp() {
   // Load All Data from REST APIs
   const loadAllData = async () => {
     try {
-      // 1. User Context
+      // 1. User Context & Session Verification
       const meRes = await fetch('/api/auth/me');
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        if (meData.authenticated) {
-          setCurrentUser({
-            id: meData.activeMembership?.id,
-            name: meData.user.name,
-            initials: meData.user.initials,
-            email: meData.user.email,
-            role: meData.activeMembership?.designation || 'Team Lead',
-            team: meData.activeMembership?.team?.name || 'Alpha',
-          });
-        }
+      if (!meRes.ok) {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+        setAuthChecking(false);
+        return;
       }
+
+      const meData = await meRes.json();
+      if (!meData.authenticated || !meData.user) {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+        setAuthChecking(false);
+        return;
+      }
+
+      setIsAuthenticated(true);
+      setRole(meData.activeRole || 'member');
+      setCurrentUser({
+        id: meData.activeMembership?.id || meData.user.id,
+        userId: meData.user.id,
+        name: meData.user.name,
+        initials: meData.user.initials,
+        email: meData.user.email,
+        role: meData.activeMembership?.designation || (meData.activeRole ? meData.activeRole.toUpperCase() : 'Member'),
+        team: meData.activeMembership?.team?.name || 'BlindMatrix',
+        isPlatformAdmin: meData.user.isPlatformAdmin,
+      });
+      if (meData.organization) {
+        setOrganization(meData.organization);
+      }
+      setAuthChecking(false);
 
       // 2. Attendance Status
       const attRes = await fetch('/api/attendance/status?date=2026-11-09');
@@ -361,7 +368,7 @@ export default function RecActsFullyFunctionalApp() {
 
   useEffect(() => {
     loadAllData();
-  }, [role]);
+  }, []);
 
   // Attendance Check-in / Out Actions
   const handleCheckIn = async () => {
@@ -629,6 +636,196 @@ export default function RecActsFullyFunctionalApp() {
     );
   };
 
+  // Full-screen Loading State during session check
+  if (authChecking) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'dark bg-[#090D16] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-500/25 animate-pulse">
+            <Zap className="w-6 h-6 fill-white" />
+          </div>
+          <div className="text-center space-y-1">
+            <h2 className="text-sm font-bold tracking-tight">RecActs</h2>
+            <p className="text-xs text-slate-400">Verifying session credentials...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Production Auth Gate Screen (Shown when unauthenticated)
+  if (!isAuthenticated) {
+    return (
+      <div className={`min-h-screen flex flex-col justify-center items-center p-6 ${darkMode ? 'dark bg-[#090D16] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
+        {toastMessage && (
+          <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-2xl bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs font-medium border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-3">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-500/25 mx-auto">
+              <Zap className="w-7 h-7 fill-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                RecActs
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Work • Track • Achieve • Multi-Tenant Workforce Platform
+              </p>
+            </div>
+          </div>
+
+          <div className="modern-card p-6 space-y-5 bg-white/80 dark:bg-[#0B0F19]/90 border-slate-200/80 dark:border-white/[0.08] shadow-2xl backdrop-blur-xl">
+            <div className="space-y-1">
+              <h2 className="text-base font-bold">Sign In to Your Workspace</h2>
+              <p className="text-xs text-slate-400">
+                Authenticate with your organization account
+              </p>
+            </div>
+
+            {loginError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSupabaseLogin} className="space-y-4 text-xs">
+              <div>
+                <label className="font-semibold block mb-1.5 text-slate-700 dark:text-slate-300">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs focus:outline-none focus:border-indigo-500 transition-colors text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1.5 text-slate-700 dark:text-slate-300">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs focus:outline-none focus:border-indigo-500 transition-colors text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/25 disabled:opacity-50"
+              >
+                {loginLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Signing in with Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Sign In</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/[0.06] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                  Select Role Persona to Test
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400">PostgreSQL RBAC</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('kiruvantham@demo.recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'kiruvantham@demo.recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Kiruvantham C</p>
+                  <p className="text-[10px] text-indigo-500 font-medium">Team Lead (Alpha)</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('yogesh@demo.recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'yogesh@demo.recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Yogesh</p>
+                  <p className="text-[10px] text-teal-500 font-medium">Member (Senior)</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('don.michael@demo.recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'don.michael@demo.recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Don Michael</p>
+                  <p className="text-[10px] text-amber-500 font-medium">Department Manager</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('meena.s@demo.recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'meena.s@demo.recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Meena S</p>
+                  <p className="text-[10px] text-pink-500 font-medium">HR Administrator</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('arun.kumar@demo.recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'arun.kumar@demo.recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-indigo-500/10 hover:border-indigo-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Arun Kumar</p>
+                  <p className="text-[10px] text-emerald-500 font-medium">Managing Director</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('admin@recacts.app');
+                    setLoginPassword('password123');
+                    handleSupabaseLogin(undefined, 'admin@recacts.app', 'password123');
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-purple-500/10 hover:border-purple-500/30 border border-slate-200/60 dark:border-white/[0.06] text-left transition-all"
+                >
+                  <p className="font-bold text-purple-400">Platform Admin</p>
+                  <p className="text-[10px] text-purple-500 font-medium">God Mode Console</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-[#090D16] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
       {/* Toast Notification */}
@@ -653,7 +850,7 @@ export default function RecActsFullyFunctionalApp() {
                   RecActs
                 </span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  BlindMatrix
+                  {organization?.name || 'BlindMatrix'}
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-none">Work • Track • Achieve</p>
@@ -698,29 +895,12 @@ export default function RecActsFullyFunctionalApp() {
           )}
         </div>
 
-        {/* Right: Role Switcher & Profile */}
+        {/* Right: Authenticated User Profile & Sign Out (No arbitrary dev switcher) */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/[0.08] text-xs">
-            {[
-              { k: 'member', l: 'Member' },
-              { k: 'lead', l: 'Team Lead' },
-              { k: 'manager', l: 'Manager' },
-              { k: 'hr', l: 'HR' },
-              { k: 'owner', l: 'Owner' },
-              { k: 'god', l: 'God Mode' },
-            ].map((r) => (
-              <button
-                key={r.k}
-                onClick={() => handleRoleSwitch(r.k)}
-                className={`px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-                  role === r.k
-                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                {r.l}
-              </button>
-            ))}
+          {/* Verified Role Pill */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-semibold">
+            <Shield className="w-3.5 h-3.5" />
+            <span className="capitalize">{currentUser?.role || role}</span>
           </div>
 
           {/* Dark / Light Toggle */}
@@ -734,28 +914,24 @@ export default function RecActsFullyFunctionalApp() {
 
           {/* User Profile */}
           <div className="flex items-center gap-2 pl-1.5">
-            <button
-              onClick={() => setModalType('loginModal')}
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity text-left"
-              title="Supabase Auth Session"
-            >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white font-semibold flex items-center justify-center text-[11px] shadow-sm">
-                {currentUser.initials}
+            <div className="flex items-center gap-2 text-left">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm">
+                {currentUser?.initials || 'U'}
               </div>
               <div className="hidden xl:block text-left leading-tight">
                 <p className="text-xs font-semibold flex items-center gap-1">
-                  {currentUser.name}
+                  {currentUser?.name}
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Connected to Supabase" />
                 </p>
-                <p className="text-[10px] text-slate-400">{currentUser.role}</p>
+                <p className="text-[10px] text-slate-400">{currentUser?.email}</p>
               </div>
-            </button>
+            </div>
             <button
-              onClick={() => setModalType('loginModal')}
-              className="p-1.5 rounded-lg border border-slate-200/80 dark:border-white/[0.08] text-slate-400 hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-white/[0.05]"
-              title="Sign in with Supabase"
+              onClick={handleSupabaseLogout}
+              className="p-1.5 rounded-lg border border-slate-200/80 dark:border-white/[0.08] text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+              title="Sign Out"
             >
-              <LogIn className="w-3.5 h-3.5" />
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -779,8 +955,9 @@ export default function RecActsFullyFunctionalApp() {
           <div>
             <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Sprint Workflow</p>
             <div className="space-y-0.5">
-              {renderNavItem('approvals', 'Approvals Queue', <CheckCircle2 className="w-3.5 h-3.5" />, approvals.filter(a => a.submissionStatus === 'Submitted').length || 4)}
-              {renderNavItem('blockers', 'Blocker Board', <AlertOctagon className="w-3.5 h-3.5" />, blockers.filter(b => b.status === 'Raised').length || 2, true)}
+              {hasPermission(role as FunctionalRole, 'work_logs:approve') &&
+                renderNavItem('approvals', 'Approvals Queue', <CheckCircle2 className="w-3.5 h-3.5" />, approvals.filter(a => a.submissionStatus === 'Submitted').length)}
+              {renderNavItem('blockers', 'Blocker Board', <AlertOctagon className="w-3.5 h-3.5" />, blockers.filter(b => b.status === 'Raised').length, true)}
               {renderNavItem('leave', 'Leave Planner', <Calendar className="w-3.5 h-3.5" />)}
             </div>
           </div>
@@ -790,10 +967,13 @@ export default function RecActsFullyFunctionalApp() {
             <div className="space-y-0.5">
               {renderNavItem('kpi', 'KPI Engine', <Target className="w-3.5 h-3.5" />)}
               {renderNavItem('reports', 'Reports & EOD', <BarChart3 className="w-3.5 h-3.5" />)}
-              {renderNavItem('audit', 'Audit History', <History className="w-3.5 h-3.5" />)}
+              {hasPermission(role as FunctionalRole, 'audit:view') &&
+                renderNavItem('audit', 'Audit History', <History className="w-3.5 h-3.5" />)}
               {renderNavItem('api-docs', 'REST API Explorer', <ExternalLink className="w-3.5 h-3.5" />)}
-              {renderNavItem('settings', 'Tenant Settings', <Settings className="w-3.5 h-3.5" />)}
-              {role === 'god' && renderNavItem('god', 'Platform God Mode', <Shield className="w-3.5 h-3.5 text-purple-500" />)}
+              {hasPermission(role as FunctionalRole, 'org:manage_settings') &&
+                renderNavItem('settings', 'Tenant Settings', <Settings className="w-3.5 h-3.5" />)}
+              {(role === 'god' || currentUser?.isPlatformAdmin) &&
+                renderNavItem('god', 'Platform God Mode', <Shield className="w-3.5 h-3.5 text-purple-500" />)}
             </div>
           </div>
 
@@ -807,11 +987,11 @@ export default function RecActsFullyFunctionalApp() {
               <span className="font-mono text-[10px] text-slate-500">PostgreSQL</span>
             </div>
             <button
-              onClick={() => setModalType('loginModal')}
-              className="w-full py-1.5 px-2.5 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-400 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-transparent hover:border-emerald-500/20"
+              onClick={handleSupabaseLogout}
+              className="w-full py-1.5 px-2.5 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-rose-500/10 hover:text-rose-400 text-slate-400 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-transparent hover:border-rose-500/20"
             >
-              <LogIn className="w-3 h-3" />
-              <span>Switch / Sign In</span>
+              <LogOut className="w-3 h-3" />
+              <span>Sign Out</span>
             </button>
           </div>
         </aside>
@@ -834,10 +1014,10 @@ export default function RecActsFullyFunctionalApp() {
                       <span className="text-xs text-slate-500">• Release 7.4 Freeze in 11 days</span>
                     </div>
                     <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                      Welcome back, {currentUser.name}
+                      Welcome back, {currentUser?.name || 'User'}
                     </h1>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {currentUser.role} • {currentUser.team} Team • All calculations synchronized with BlindMatrix tenant policy
+                      {currentUser?.role || role} • {currentUser?.team || 'Core'} Team • All calculations synchronized with {organization?.name || 'BlindMatrix'} tenant policy
                     </p>
                   </div>
                   <div className="flex items-center gap-2.5">
@@ -1657,6 +1837,21 @@ export default function RecActsFullyFunctionalApp() {
           {/* 6. VIEW: APPROVALS QUEUE */}
           {/* ========================================================================= */}
           {activeTab === 'approvals' && (
+            !hasPermission(role as FunctionalRole, 'work_logs:approve') ? (
+              <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto">
+                <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold">Access Restricted</h2>
+                <p className="text-xs text-slate-400">
+                  Timesheet approvals are restricted to Team Leads, Managers, and Organization Owners.
+                  Your current verified role is <span className="font-semibold text-slate-200">{currentUser?.role || role}</span>.
+                </p>
+                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                  Return to Dashboard
+                </button>
+              </div>
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -1740,6 +1935,7 @@ export default function RecActsFullyFunctionalApp() {
                 ))}
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
@@ -1790,7 +1986,7 @@ export default function RecActsFullyFunctionalApp() {
                       <span>Responsible: {b.responsibleLead}</span>
                     </div>
 
-                    {b.status !== 'Resolved' && (
+                    {b.status !== 'Resolved' && hasPermission(role as FunctionalRole, 'blockers:acknowledge') && (
                       <div className="flex items-center gap-2 pt-2">
                         {b.status === 'Raised' && (
                           <button
@@ -2452,6 +2648,21 @@ export default function RecActsFullyFunctionalApp() {
           {/* 11. VIEW: AUDIT LOGS */}
           {/* ========================================================================= */}
           {activeTab === 'audit' && (
+            !hasPermission(role as FunctionalRole, 'audit:view') ? (
+              <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto">
+                <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold">Access Restricted</h2>
+                <p className="text-xs text-slate-400">
+                  Audit logs and compliance trails are restricted to Department Managers, HR, and Organization Owners.
+                  Your current role is <span className="font-semibold text-slate-200">{currentUser?.role || role}</span>.
+                </p>
+                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                  Return to Dashboard
+                </button>
+              </div>
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div>
                 <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Audit Trail & Compliance</h1>
@@ -2489,6 +2700,7 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
@@ -2560,7 +2772,22 @@ export default function RecActsFullyFunctionalApp() {
           {/* ========================================================================= */}
           {/* 13. VIEW: PLATFORM GOD MODE */}
           {/* ========================================================================= */}
-          {activeTab === 'god' && role === 'god' && (
+          {activeTab === 'god' && (
+            !(role === 'god' || currentUser?.isPlatformAdmin) ? (
+              <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto border-purple-500/20">
+                <div className="w-12 h-12 rounded-full bg-purple-500/10 text-purple-400 mx-auto flex items-center justify-center">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold">Platform God Mode Console Restricted</h2>
+                <p className="text-xs text-slate-400">
+                  Platform administration console requires root platform super-admin privileges.
+                  Your current account does not have platform-level access.
+                </p>
+                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                  Return to Dashboard
+                </button>
+              </div>
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
                 <div>
@@ -2656,6 +2883,7 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}

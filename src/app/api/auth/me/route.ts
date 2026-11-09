@@ -42,31 +42,7 @@ export async function GET() {
       // Supabase auth check fallback
     }
 
-    // 2. If no session exists yet, default to Kiruvantham C (Team Lead)
-    if (!session) {
-      const defaultUser = await prisma.user.findFirst({
-        where: { email: 'kiruvantham@demo.recacts.app' },
-        include: {
-          memberships: {
-            include: {
-              organization: true,
-              team: true,
-            },
-          },
-        },
-      });
-
-      if (defaultUser && defaultUser.memberships.length > 0) {
-        session = {
-          userId: defaultUser.id,
-          email: defaultUser.email,
-          organizationId: defaultUser.memberships[0].organizationId,
-          membershipId: defaultUser.memberships[0].id,
-          role: 'lead',
-        };
-      }
-    }
-
+    // 2. If no session exists, return 401 Unauthorized
     if (!session) {
       return NextResponse.json({ authenticated: false, user: null }, { status: 401 });
     }
