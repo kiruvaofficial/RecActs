@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
