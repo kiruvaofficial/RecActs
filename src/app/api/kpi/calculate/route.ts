@@ -12,6 +12,21 @@ import {
   KpiSettings,
 } from '@/lib/kpi-engine';
 
+function formatMonthName(periodStr: string): string {
+  const parts = periodStr.split('-');
+  if (parts.length >= 2) {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const idx = parseInt(parts[1], 10) - 1;
+    if (idx >= 0 && idx < 12) {
+      return `${monthNames[idx]} ${parts[0]}`;
+    }
+  }
+  return periodStr === '2026-10' ? 'October 2026' : 'November 2026';
+}
+
 export async function GET(req: NextRequest) {
   const { error, context } = await requireTenantContext();
   if (error || !context) return error;
@@ -219,7 +234,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       period,
       settings: {
-        month: period === '2026-10' ? 'October 2026' : (period === '2026-11' ? 'November 2026' : 'October 2026'),
+        month: formatMonthName(period),
         workingDays: settings.workingDays,
         dailyHours: settings.dailyHours,
         productiveFactor: settings.productiveFactor,

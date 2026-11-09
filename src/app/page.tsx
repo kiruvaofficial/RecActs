@@ -122,6 +122,32 @@ export default function RecActsFullyFunctionalApp() {
   const [filterTeam, setFilterTeam] = useState<string>('All');
   const [ganttZoom, setGanttZoom] = useState<'day' | 'week' | 'month'>('week');
 
+  // Month & Period Filtering
+  const MONTH_OPTIONS = [
+    { value: '2026-10', label: 'October 2026' },
+    { value: '2026-11', label: 'November 2026' },
+    { value: '2026-12', label: 'December 2026' },
+    { value: '2026-09', label: 'September 2026' },
+  ];
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
+  const [ticketMonthFilter, setTicketMonthFilter] = useState<string>('all');
+  const [reportMonthFilter, setReportMonthFilter] = useState<string>('all');
+
+  const handleMonthChange = async (month: string) => {
+    setSelectedMonth(month);
+    try {
+      const kpiRes = await fetch(`/api/kpi/calculate?period=${month}`);
+      if (kpiRes.ok) {
+        const kData = await kpiRes.json();
+        setKpiData(kData);
+        const mLabel = MONTH_OPTIONS.find((m) => m.value === month)?.label || month;
+        showToast(`Period switched to ${mLabel}`);
+      }
+    } catch (err) {
+      console.error('Failed to reload KPI for month:', err);
+    }
+  };
+
   // Supabase Auth Form State
   const [loginEmail, setLoginEmail] = useState('kiruvantham@demo.recacts.app');
   const [loginPassword, setLoginPassword] = useState('password123');
@@ -1085,7 +1111,24 @@ export default function RecActsFullyFunctionalApp() {
                         {currentUser?.role || role} • {currentUser?.team || 'Core'} Team • All calculations synchronized with {organization?.name || 'BlindMatrix'} tenant policy
                       </p>
                     </div>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Dashboard Month Filter */}
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 dark:bg-white/[0.06] backdrop-blur-md border border-white/15 text-xs font-semibold">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="text-[11px] text-slate-300 hidden sm:inline">Period:</span>
+                        <select
+                          value={selectedMonth}
+                          onChange={(e) => handleMonthChange(e.target.value)}
+                          className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
+                        >
+                          {MONTH_OPTIONS.map((m) => (
+                            <option key={m.value} value={m.value} className="bg-slate-900 text-white">
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <button
                         onClick={handleGenerateEod}
                         className="btn-modern-secondary px-3 py-2 text-xs flex items-center gap-1.5"
@@ -1748,7 +1791,27 @@ export default function RecActsFullyFunctionalApp() {
                     Shared ticket weightages with independent individual allocations preventing double counting.
                   </p>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Tickets Month Filter */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">Month:</span>
+                    <select
+                      value={ticketMonthFilter}
+                      onChange={(e) => setTicketMonthFilter(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                    >
+                      <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        All Months ({tickets.length})
+                      </option>
+                      {MONTH_OPTIONS.map((m) => (
+                        <option key={m.value} value={m.value} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
                     <button
                       onClick={() => setTicketViewMode('board')}
@@ -1789,7 +1852,15 @@ export default function RecActsFullyFunctionalApp() {
               {ticketViewMode === 'board' ? (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {['To Do', 'In Progress', 'Under Review', 'Completed'].map((columnStatus) => {
-                    const colTickets = tickets.filter((t) => t.status === columnStatus);
+                    const visibleTickets = tickets.filter((t: any) => {
+                      if (ticketMonthFilter === 'all') return true;
+                      const inDue = t.plannedDue?.startsWith(ticketMonthFilter);
+                      const inStart = t.plannedStart?.startsWith(ticketMonthFilter);
+                      const inComp = t.completedDate?.startsWith(ticketMonthFilter);
+                      if (ticketMonthFilter === '2026-10') return inDue || inStart || inComp || (!inDue && !inStart);
+                      return inDue || inStart || inComp;
+                    });
+                    const colTickets = visibleTickets.filter((t: any) => t.status === columnStatus);
                     return (
                       <div key={columnStatus} className="space-y-3">
                         <div className="flex items-center justify-between px-1">
@@ -1868,7 +1939,14 @@ export default function RecActsFullyFunctionalApp() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                        {tickets.map((t) => (
+                        {tickets.filter((t: any) => {
+                          if (ticketMonthFilter === 'all') return true;
+                          const inDue = t.plannedDue?.startsWith(ticketMonthFilter);
+                          const inStart = t.plannedStart?.startsWith(ticketMonthFilter);
+                          const inComp = t.completedDate?.startsWith(ticketMonthFilter);
+                          if (ticketMonthFilter === '2026-10') return inDue || inStart || inComp || (!inDue && !inStart);
+                          return inDue || inStart || inComp;
+                        }).map((t) => (
                           <tr
                             key={t.id}
                             onClick={() => setSelectedTicket(t)}
@@ -2279,10 +2357,26 @@ export default function RecActsFullyFunctionalApp() {
                 <div>
                   <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Staff KPI - Target vs Achieved Weightage</h1>
                   <p className="text-xs text-slate-500">
-                    Month: November 2026 • 1 weightage = 1 estimated hour • Target = (Working Days - Leave) × 8h × 90% × Capacity%
+                    Month: {kpiData?.settings?.month || MONTH_OPTIONS.find((m) => m.value === selectedMonth)?.label || 'October 2026'} • 1 weightage = 1 estimated hour • Target = (Working Days - Leave) × 8h × 90% × Capacity%
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* KPI Month Cycle Selector */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">KPI Cycle:</span>
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => handleMonthChange(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                    >
+                      {MONTH_OPTIONS.map((m) => (
+                        <option key={m.value} value={m.value} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <button
                     onClick={() => {
                       setModalType('targetOverride');
@@ -2717,7 +2811,24 @@ export default function RecActsFullyFunctionalApp() {
                     Automated daily EOD delivery logs, delivery retry dispatch, and CSV/Excel exports.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Reports Month Filter */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">Month:</span>
+                    <select
+                      value={reportMonthFilter}
+                      onChange={(e) => setReportMonthFilter(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                    >
+                      <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">All Months</option>
+                      {MONTH_OPTIONS.map((m) => (
+                        <option key={m.value} value={m.value} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <button onClick={() => showToast('Exported CSV dataset')} className="btn-modern-secondary px-3 py-1.5 text-xs flex items-center gap-1.5">
                     <Download className="w-3.5 h-3.5" />
                     <span>Export CSV</span>
@@ -2745,7 +2856,10 @@ export default function RecActsFullyFunctionalApp() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                      {eodHistory.map((e) => (
+                      {eodHistory.filter((e) => {
+                        if (reportMonthFilter === 'all') return true;
+                        return e.date?.startsWith(reportMonthFilter);
+                      }).map((e) => (
                         <tr key={e.id}>
                           <td className="py-2.5 px-3 font-mono">{e.date}</td>
                           <td className="py-2.5 px-3 font-semibold">{e.memberName}</td>
