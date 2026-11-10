@@ -730,6 +730,23 @@ export default function RecActsFullyFunctionalApp() {
     );
   };
 
+  // Standardized Access Restricted Panel
+  const renderAccessRestricted = (title: string, reason: string) => (
+    <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto">
+      <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
+        <Lock className="w-6 h-6" />
+      </div>
+      <h2 className="text-lg font-bold">{title}</h2>
+      <p className="text-xs text-slate-400">
+        {reason} Your current verified role is{' '}
+        <span className="font-semibold text-slate-200 capitalize">{currentUser?.role || role}</span>.
+      </p>
+      <button onClick={() => handleTabChange('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+        Return to Dashboard
+      </button>
+    </div>
+  );
+
   // Full-screen Loading State during session check
   if (authChecking) {
     return (
@@ -1008,37 +1025,61 @@ export default function RecActsFullyFunctionalApp() {
             <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Core Workspace</p>
             <div className="space-y-0.5">
               {renderNavItem('dash', 'Overview', <LayoutDashboard className="w-3.5 h-3.5" />)}
-              {renderNavItem('activities', 'Work Logs', <FileText className="w-3.5 h-3.5" />)}
-              {renderNavItem('attendance', 'Attendance & Shifts', <Clock className="w-3.5 h-3.5" />)}
-              {renderNavItem('tickets', 'Tickets & Weightages', <TicketIcon className="w-3.5 h-3.5" />)}
-              {renderNavItem('timeline', 'Gantt Timeline', <CalendarRange className="w-3.5 h-3.5" />)}
+              {hasPermission(role as FunctionalRole, 'work_logs:create') &&
+                renderNavItem('activities', 'Work Logs', <FileText className="w-3.5 h-3.5" />)}
+              {hasPermission(role as FunctionalRole, 'attendance:view_own') &&
+                renderNavItem('attendance', 'Attendance & Shifts', <Clock className="w-3.5 h-3.5" />)}
+              {hasPermission(role as FunctionalRole, 'tickets:view') &&
+                renderNavItem('tickets', 'Tickets & Weightages', <TicketIcon className="w-3.5 h-3.5" />)}
+              {hasPermission(role as FunctionalRole, 'timeline:view') &&
+                renderNavItem('timeline', 'Gantt Timeline', <CalendarRange className="w-3.5 h-3.5" />)}
             </div>
           </div>
 
-          <div>
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Sprint Workflow</p>
-            <div className="space-y-0.5">
-              {hasPermission(role as FunctionalRole, 'work_logs:approve') &&
-                renderNavItem('approvals', 'Approvals Queue', <CheckCircle2 className="w-3.5 h-3.5" />, approvals.filter(a => a.submissionStatus === 'Submitted').length)}
-              {renderNavItem('blockers', 'Blocker Board', <AlertOctagon className="w-3.5 h-3.5" />, blockers.filter(b => b.status === 'Raised').length, true)}
-              {renderNavItem('leave', 'Leave Planner', <Calendar className="w-3.5 h-3.5" />)}
+          {(hasPermission(role as FunctionalRole, 'work_logs:approve') ||
+            hasPermission(role as FunctionalRole, 'blockers:raise') ||
+            hasPermission(role as FunctionalRole, 'blockers:acknowledge') ||
+            hasPermission(role as FunctionalRole, 'leave:apply') ||
+            hasPermission(role as FunctionalRole, 'leave:view_calendar')) && (
+            <div>
+              <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Sprint Workflow</p>
+              <div className="space-y-0.5">
+                {hasPermission(role as FunctionalRole, 'work_logs:approve') &&
+                  renderNavItem('approvals', 'Approvals Queue', <CheckCircle2 className="w-3.5 h-3.5" />, approvals.filter(a => a.submissionStatus === 'Submitted').length)}
+                {(hasPermission(role as FunctionalRole, 'blockers:raise') || hasPermission(role as FunctionalRole, 'blockers:acknowledge')) &&
+                  renderNavItem('blockers', 'Blocker Board', <AlertOctagon className="w-3.5 h-3.5" />, blockers.filter(b => b.status === 'Raised').length, true)}
+                {(hasPermission(role as FunctionalRole, 'leave:apply') || hasPermission(role as FunctionalRole, 'leave:view_calendar')) &&
+                  renderNavItem('leave', 'Leave Planner', <Calendar className="w-3.5 h-3.5" />)}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div>
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Analytics & Admin</p>
-            <div className="space-y-0.5">
-              {renderNavItem('kpi', 'KPI Engine', <Target className="w-3.5 h-3.5" />)}
-              {renderNavItem('reports', 'Reports & EOD', <BarChart3 className="w-3.5 h-3.5" />)}
-              {hasPermission(role as FunctionalRole, 'audit:view') &&
-                renderNavItem('audit', 'Audit History', <History className="w-3.5 h-3.5" />)}
-              {renderNavItem('api-docs', 'REST API Explorer', <ExternalLink className="w-3.5 h-3.5" />)}
-              {hasPermission(role as FunctionalRole, 'org:manage_settings') &&
-                renderNavItem('settings', 'Tenant Settings', <Settings className="w-3.5 h-3.5" />)}
-              {(role === 'god' || currentUser?.isPlatformAdmin) &&
-                renderNavItem('god', 'Platform God Mode', <Shield className="w-3.5 h-3.5 text-purple-500" />)}
+          {(hasPermission(role as FunctionalRole, 'kpi:view_own') ||
+            hasPermission(role as FunctionalRole, 'kpi:view_team') ||
+            hasPermission(role as FunctionalRole, 'reports:view') ||
+            hasPermission(role as FunctionalRole, 'audit:view') ||
+            hasPermission(role as FunctionalRole, 'platform:api_docs') ||
+            hasPermission(role as FunctionalRole, 'org:manage_settings') ||
+            role === 'god' ||
+            currentUser?.isPlatformAdmin) && (
+            <div>
+              <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Analytics & Admin</p>
+              <div className="space-y-0.5">
+                {(hasPermission(role as FunctionalRole, 'kpi:view_own') || hasPermission(role as FunctionalRole, 'kpi:view_team') || hasPermission(role as FunctionalRole, 'kpi:view_org')) &&
+                  renderNavItem('kpi', 'KPI Engine', <Target className="w-3.5 h-3.5" />)}
+                {hasPermission(role as FunctionalRole, 'reports:view') &&
+                  renderNavItem('reports', 'Reports & EOD', <BarChart3 className="w-3.5 h-3.5" />)}
+                {hasPermission(role as FunctionalRole, 'audit:view') &&
+                  renderNavItem('audit', 'Audit History', <History className="w-3.5 h-3.5" />)}
+                {hasPermission(role as FunctionalRole, 'platform:api_docs') &&
+                  renderNavItem('api-docs', 'REST API Explorer', <ExternalLink className="w-3.5 h-3.5" />)}
+                {hasPermission(role as FunctionalRole, 'org:manage_settings') &&
+                  renderNavItem('settings', 'Tenant Settings', <Settings className="w-3.5 h-3.5" />)}
+                {(role === 'god' || currentUser?.isPlatformAdmin) &&
+                  renderNavItem('god', 'Platform God Mode', <Shield className="w-3.5 h-3.5 text-purple-500" />)}
+              </div>
             </div>
-          </div>
+          )}
 
 
         </aside>
@@ -1168,20 +1209,24 @@ export default function RecActsFullyFunctionalApp() {
                         </select>
                       </div>
 
-                      <button
-                        onClick={handleGenerateEod}
-                        className="btn-modern-secondary px-3 py-2 text-xs flex items-center gap-1.5"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Trigger EOD Mailer</span>
-                      </button>
-                      <button
-                        onClick={() => handleTabChange('activities')}
-                        className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Log Daily Effort</span>
-                      </button>
+                      {hasPermission(role as FunctionalRole, 'reports:eod_resend') && (
+                        <button
+                          onClick={handleGenerateEod}
+                          className="btn-modern-secondary px-3 py-2 text-xs flex items-center gap-1.5"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Trigger EOD Mailer</span>
+                        </button>
+                      )}
+                      {hasPermission(role as FunctionalRole, 'work_logs:create') && (
+                        <button
+                          onClick={() => handleTabChange('activities')}
+                          className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Log Daily Effort</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1466,6 +1511,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'activities' && (
             (isDataLoading || tabTransitioning === 'activities') ? (
               <ActivitiesSkeleton />
+            ) : !hasPermission(role as FunctionalRole, 'work_logs:create') ? (
+              renderAccessRestricted('Work Logs Restricted', 'Daily work logging is disabled for HR administration accounts.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1764,8 +1811,8 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
 
-              {/* Attendance Corrections Queue (if HR/Manager) */}
-              {corrections.length > 0 && ['hr', 'manager', 'owner', 'lead'].includes(role) && (
+              {/* Attendance Corrections Queue (HR / Manager / Owner only) */}
+              {corrections.length > 0 && hasPermission(role as FunctionalRole, 'attendance:correct_approve') && (
                 <div className="modern-card p-5 space-y-3 border-amber-500/20">
                   <h3 className="font-bold text-xs uppercase tracking-wider text-amber-500">
                     Attendance Correction Requests ({corrections.filter(c => c.status === 'Pending').length} Pending)
@@ -1868,6 +1915,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'tickets' && (
             (isDataLoading || tabTransitioning === 'tickets') ? (
               <TicketsSkeleton viewMode={ticketViewMode} />
+            ) : !hasPermission(role as FunctionalRole, 'tickets:view') ? (
+              renderAccessRestricted('Tickets Restricted', 'Requirement ticket views are restricted to delivery teams and leadership.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1915,22 +1964,24 @@ export default function RecActsFullyFunctionalApp() {
                     </button>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setModalType('newTicket');
-                      setModalData({
-                        reference: `REQ-I${Math.floor(3015 + Math.random() * 50)}`,
-                        title: '',
-                        customerName: 'Northwind Interiors',
-                        totalEstimatedHours: 20,
-                        priority: 'High',
-                      });
-                    }}
-                    className="btn-modern-primary px-3 py-2 text-xs flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>New Requirement</span>
-                  </button>
+                  {hasPermission(role as FunctionalRole, 'tickets:create') && (
+                    <button
+                      onClick={() => {
+                        setModalType('newTicket');
+                        setModalData({
+                          reference: `REQ-I${Math.floor(3015 + Math.random() * 50)}`,
+                          title: '',
+                          customerName: 'Northwind Interiors',
+                          totalEstimatedHours: 20,
+                          priority: 'High',
+                        });
+                      }}
+                      className="btn-modern-primary px-3 py-2 text-xs flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>New Requirement</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2071,6 +2122,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'timeline' && (
             (isDataLoading || tabTransitioning === 'timeline') ? (
               <GenericTabSkeleton title="Interactive Gantt Timeline" />
+            ) : !hasPermission(role as FunctionalRole, 'timeline:view') ? (
+              renderAccessRestricted('Timeline Restricted', 'Interactive Gantt schedules are restricted to project delivery teams and leadership.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2254,6 +2307,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'blockers' && (
             (isDataLoading || tabTransitioning === 'blockers') ? (
               <BlockersSkeleton />
+            ) : !(hasPermission(role as FunctionalRole, 'blockers:raise') || hasPermission(role as FunctionalRole, 'blockers:acknowledge')) ? (
+              renderAccessRestricted('Blocker Board Restricted', 'Impediment tracking is restricted to delivery teams and leadership.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2384,7 +2439,9 @@ export default function RecActsFullyFunctionalApp() {
 
               {/* Requests Table */}
               <div className="modern-card p-5 space-y-4">
-                <h3 className="font-bold text-sm">Team Leave Applications</h3>
+                <h3 className="font-bold text-sm">
+                  {hasPermission(role as FunctionalRole, 'leave:approve') ? 'Team Leave Applications' : 'My Leave Applications'}
+                </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 uppercase text-[10px] font-bold">
@@ -2399,7 +2456,10 @@ export default function RecActsFullyFunctionalApp() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                      {leaveData.teamRequests?.map((lr: any) => (
+                      {(hasPermission(role as FunctionalRole, 'leave:approve')
+                        ? leaveData.teamRequests
+                        : (leaveData.myRequests?.length ? leaveData.myRequests : leaveData.teamRequests?.filter((lr: any) => lr.memberName === currentUser?.name))
+                      )?.map((lr: any) => (
                         <tr key={lr.id}>
                           <td className="py-2.5 px-3 font-semibold">{lr.memberName}</td>
                           <td className="py-2.5 px-3">
@@ -2422,7 +2482,7 @@ export default function RecActsFullyFunctionalApp() {
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            {lr.status === 'Pending' && (
+                            {lr.status === 'Pending' && hasPermission(role as FunctionalRole, 'leave:approve') ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleLeaveAction(lr.id, 'reject')}
@@ -2437,6 +2497,8 @@ export default function RecActsFullyFunctionalApp() {
                                   Approve
                                 </button>
                               </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-500">{lr.status}</span>
                             )}
                           </td>
                         </tr>
@@ -2455,6 +2517,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'kpi' && (
             (isDataLoading || !kpiData || tabTransitioning === 'kpi') ? (
               <KpiSkeleton />
+            ) : !(hasPermission(role as FunctionalRole, 'kpi:view_own') || hasPermission(role as FunctionalRole, 'kpi:view_team') || hasPermission(role as FunctionalRole, 'kpi:view_org')) ? (
+              renderAccessRestricted('KPI Engine Restricted', 'Performance weightage scorecards are unavailable for HR administrative roles.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2481,24 +2545,28 @@ export default function RecActsFullyFunctionalApp() {
                       ))}
                     </select>
                   </div>
-                  <button
-                    onClick={() => {
-                      setModalType('targetOverride');
-                      setModalData({ memberId: '', revisedTargetHours: 158, reason: '' });
-                    }}
-                    className="btn-modern-secondary px-3 py-1.5 text-xs"
-                  >
-                    Propose Target Override
-                  </button>
-                  <button
-                    onClick={() => {
-                      setModalType('negativeImpact');
-                      setModalData({ category: 'Reassignment', impactValue: 5, valueType: 'percentage', reason: '' });
-                    }}
-                    className="btn-modern-secondary px-3 py-1.5 text-xs text-rose-500"
-                  >
-                    Apply Deduction
-                  </button>
+                  {hasPermission(role as FunctionalRole, 'kpi:override_submit') && (
+                    <button
+                      onClick={() => {
+                        setModalType('targetOverride');
+                        setModalData({ memberId: '', revisedTargetHours: 158, reason: '' });
+                      }}
+                      className="btn-modern-secondary px-3 py-1.5 text-xs"
+                    >
+                      Propose Target Override
+                    </button>
+                  )}
+                  {hasPermission(role as FunctionalRole, 'kpi:deduct_impact') && (
+                    <button
+                      onClick={() => {
+                        setModalType('negativeImpact');
+                        setModalData({ category: 'Reassignment', impactValue: 5, valueType: 'percentage', reason: '' });
+                      }}
+                      className="btn-modern-secondary px-3 py-1.5 text-xs text-rose-500"
+                    >
+                      Apply Deduction
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2640,7 +2708,13 @@ export default function RecActsFullyFunctionalApp() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                        {kpiData?.staffKpis?.map((s: any) => (
+                        {(hasPermission(role as FunctionalRole, 'kpi:view_team')
+                          ? kpiData?.staffKpis
+                          : kpiData?.staffKpis?.filter((s: any) =>
+                              s.staffId === currentUser?.id ||
+                              (currentUser?.name && s.name?.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0]))
+                            )
+                        )?.map((s: any) => (
                           <tr
                             key={s.staffId || s.name}
                             className={`hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors ${
@@ -2706,7 +2780,7 @@ export default function RecActsFullyFunctionalApp() {
                         ))}
 
                         {/* TEAM TOTAL FOOTER ROW */}
-                        {kpiData?.teamTotal && (
+                        {kpiData?.teamTotal && hasPermission(role as FunctionalRole, 'kpi:view_team') && (
                           <tr className="bg-slate-100/80 dark:bg-white/[0.08] font-bold border-t-2 border-slate-300 dark:border-white/20">
                             <td className="py-3 px-3 uppercase tracking-wider text-indigo-400">
                               {kpiData.teamTotal.name}
@@ -2776,7 +2850,12 @@ export default function RecActsFullyFunctionalApp() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                        {kpiData?.tickets?.map((t: any) => (
+                        {(hasPermission(role as FunctionalRole, 'kpi:view_team')
+                          ? kpiData?.tickets
+                          : kpiData?.tickets?.filter((t: any) =>
+                              currentUser?.name && t.assignedTo?.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0])
+                            )
+                        )?.map((t: any) => (
                           <tr key={t.id || t.reference} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.02]">
                             <td className="py-2 px-3 font-mono font-bold text-indigo-400">{t.reference}</td>
                             <td className="py-2 px-3 max-w-[280px] truncate" title={t.title}>{t.title}</td>
@@ -2924,6 +3003,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'reports' && (
             (isDataLoading || tabTransitioning === 'reports') ? (
               <GenericTabSkeleton title="Reports & EOD Logs" />
+            ) : !hasPermission(role as FunctionalRole, 'reports:view') ? (
+              renderAccessRestricted('Reports & EOD Restricted', 'Organization reports and automated EOD logs are restricted to Team Leads, Managers, HR, and Owners.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2951,14 +3032,18 @@ export default function RecActsFullyFunctionalApp() {
                       ))}
                     </select>
                   </div>
-                  <button onClick={() => showToast('Exported CSV dataset')} className="btn-modern-secondary px-3 py-1.5 text-xs flex items-center gap-1.5">
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Export CSV</span>
-                  </button>
-                  <button onClick={handleGenerateEod} className="btn-modern-primary px-3 py-1.5 text-xs flex items-center gap-1.5">
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Run EOD Dispatch</span>
-                  </button>
+                  {hasPermission(role as FunctionalRole, 'reports:export') && (
+                    <button onClick={() => showToast('Exported CSV dataset')} className="btn-modern-secondary px-3 py-1.5 text-xs flex items-center gap-1.5">
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export CSV</span>
+                    </button>
+                  )}
+                  {hasPermission(role as FunctionalRole, 'reports:eod_resend') && (
+                    <button onClick={handleGenerateEod} className="btn-modern-primary px-3 py-1.5 text-xs flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Run EOD Dispatch</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2993,7 +3078,7 @@ export default function RecActsFullyFunctionalApp() {
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            {e.deliveryStatus === 'Failed' && (
+                            {e.deliveryStatus === 'Failed' && hasPermission(role as FunctionalRole, 'reports:eod_resend') && (
                               <button
                                 onClick={async () => {
                                   await fetch('/api/eod/history', {
@@ -3087,6 +3172,8 @@ export default function RecActsFullyFunctionalApp() {
           {activeTab === 'settings' && (
             (isDataLoading || tabTransitioning === 'settings') ? (
               <GenericTabSkeleton title="Organization Parameters & Policies" />
+            ) : !hasPermission(role as FunctionalRole, 'org:manage_settings') ? (
+              renderAccessRestricted('Tenant Settings Restricted', 'Organization schedule, policy, and parameter management requires Organization Owner privileges.')
             ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
@@ -3588,6 +3675,9 @@ export default function RecActsFullyFunctionalApp() {
           {/* 14. VIEW: REST API EXPLORER */}
           {/* ========================================================================= */}
           {activeTab === 'api-docs' && (
+            !hasPermission(role as FunctionalRole, 'platform:api_docs') ? (
+              renderAccessRestricted('REST API Explorer Restricted', 'Technical API schema documentation is restricted to Organization Owners and Platform Administrators.')
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
                 <div>
@@ -3635,6 +3725,7 @@ export default function RecActsFullyFunctionalApp() {
                 ))}
               </div>
             </div>
+            )
           )}
         </main>
       </div>
@@ -3657,10 +3748,18 @@ export default function RecActsFullyFunctionalApp() {
               <div>
                 <span className="text-slate-400 block mb-1">Status Transition:</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {['Backlog', 'To Do', 'In Progress', 'Under Review', 'Completed'].map((st) => (
+                  {['Backlog', 'To Do', 'In Progress', 'Under Review', 'Completed'].map((st) => {
+                    const isAssignedToTicket = selectedTicket.allocations?.some(
+                      (a: any) =>
+                        a.memberId === currentUser?.id ||
+                        (currentUser?.name && a.memberName?.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0]))
+                    );
+                    const canModifyStatus = hasPermission(role as FunctionalRole, 'tickets:edit') || isAssignedToTicket;
+                    return (
                     <button
                       key={st}
-                      onClick={() => handleUpdateTicketStatus(selectedTicket.id, st)}
+                      disabled={!canModifyStatus}
+                      onClick={() => canModifyStatus && handleUpdateTicketStatus(selectedTicket.id, st)}
                       className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
                         selectedTicket.status === st
                           ? 'bg-indigo-600 text-white font-bold'
@@ -3669,7 +3768,8 @@ export default function RecActsFullyFunctionalApp() {
                     >
                       {st}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

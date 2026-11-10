@@ -2,11 +2,16 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
+import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import prisma from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   const { error, context } = await requireTenantContext();
   if (error || !context) return error;
+
+  if (!hasPermission(context.role as FunctionalRole, 'reports:view')) {
+    return NextResponse.json({ error: 'Unauthorized to view organization reports' }, { status: 403 });
+  }
 
   const url = new URL(req.url);
   const reportType = url.searchParams.get('type') || 'Individual KPI';

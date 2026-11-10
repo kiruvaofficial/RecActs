@@ -13,7 +13,7 @@ export const PERMISSIONS: Record<string, FunctionalRole[]> = {
   'attendance:view_own': ['member', 'lead', 'manager', 'hr', 'owner'],
   'attendance:view_team': ['lead', 'manager', 'hr', 'owner'],
   'attendance:correct_request': ['member', 'lead', 'manager', 'hr', 'owner'],
-  'attendance:correct_approve': ['hr', 'owner'],
+  'attendance:correct_approve': ['hr', 'manager', 'owner'],
 
   // Daily Work Logs
   'work_logs:create': ['member', 'lead', 'manager', 'owner'],
@@ -57,7 +57,7 @@ export const PERMISSIONS: Record<string, FunctionalRole[]> = {
   'kpi:configure_rules': ['owner'],
 
   // Reports & Analytics
-  'reports:view': ['member', 'lead', 'manager', 'hr', 'owner'],
+  'reports:view': ['lead', 'manager', 'hr', 'owner'],
   'reports:export': ['lead', 'manager', 'hr', 'owner'],
   'reports:eod_resend': ['lead', 'manager', 'hr', 'owner'],
 
@@ -65,6 +65,7 @@ export const PERMISSIONS: Record<string, FunctionalRole[]> = {
   'org:manage_settings': ['owner'],
   'org:manage_employees': ['hr', 'owner'],
   'audit:view': ['manager', 'hr', 'owner', 'god'],
+  'platform:api_docs': ['owner', 'god'],
 
   // God Mode (Platform Admin)
   'platform:manage_orgs': ['god'],

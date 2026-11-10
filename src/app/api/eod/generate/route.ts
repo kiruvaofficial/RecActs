@@ -2,11 +2,16 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
+import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import { generateAndSendEodReport } from '@/lib/eod-engine';
 
 export async function POST(req: NextRequest) {
   const { error, context } = await requireTenantContext();
   if (error || !context) return error;
+
+  if (!hasPermission(context.role as FunctionalRole, 'reports:eod_resend')) {
+    return NextResponse.json({ error: 'Unauthorized to dispatch EOD reports' }, { status: 403 });
+  }
 
   try {
     const body = await req.json();

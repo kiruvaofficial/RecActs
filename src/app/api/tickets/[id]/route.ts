@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
+import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
 
@@ -63,6 +64,20 @@ export async function PATCH(
     });
 
     if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+
+    const isAssigned = ticket.assignments.some((a) => a.membershipId === context.membershipId);
+    const canEdit = hasPermission(context.role as FunctionalRole, 'tickets:edit');
+
+    // Only leads/managers/owners can modify priority, due dates, or reassignments, or edit tickets they aren't assigned to
+    if (
+      !canEdit &&
+      (priority || plannedDueDate || reassignFromMemberId || reassignToMemberId || reassignHours || !isAssigned)
+    ) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Insufficient permissions to modify this requirement ticket' },
+        { status: 403 }
+      );
+    }
 
     const updateData: any = {};
     if (status) {
