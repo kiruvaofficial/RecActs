@@ -7,6 +7,7 @@ import {
   calculateDepartmentKpi,
   calculateTargetWeightage,
   calculateTicketDeduction,
+  calculateDailyWorkingHours,
   DEFAULT_KPI_SETTINGS,
   StaffKpiInput,
   KpiSettings,
@@ -40,9 +41,15 @@ export async function GET(req: NextRequest) {
       where: { id: context.organizationId },
     });
 
+    const { shiftHours, breakHours, dailyWorkingHours } = calculateDailyWorkingHours(
+      org?.workHoursStart || '09:00',
+      org?.workHoursEnd || '18:00',
+      org?.breakDurationMinutes ?? 60
+    );
+
     const settings: KpiSettings = {
       workingDays: 22,
-      dailyHours: 8,
+      dailyHours: dailyWorkingHours,
       productiveFactor: (org?.productivityFactor || 90) / 100,
       capacityMember: (org?.capacityFactorMember || 100) / 100,
       capacityLead: (org?.capacityFactorLead || 90) / 100,
@@ -236,6 +243,9 @@ export async function GET(req: NextRequest) {
       settings: {
         month: formatMonthName(period),
         workingDays: settings.workingDays,
+        shiftHours,
+        breakHours,
+        breakDurationMinutes: org?.breakDurationMinutes ?? 60,
         dailyHours: settings.dailyHours,
         productiveFactor: settings.productiveFactor,
         capacityMember: settings.capacityMember,
@@ -244,7 +254,7 @@ export async function GET(req: NextRequest) {
         deduction1Reassign: settings.deduction1Reassign,
         deduction2Reassign: settings.deduction2Reassign,
         deduction3Reassign: settings.deduction3Reassign,
-        formula: 'Target = (Working Days - Leave Days) × Daily Hours (8) × Productive Factor (0.9) × Capacity %',
+        formula: `Target = (Working Days - Leave Days) × Net Daily Hours (${settings.dailyHours}h = ${shiftHours}h shift - ${breakHours}h break) × Productive Factor (${Math.round(settings.productiveFactor * 100)}%) × Capacity %`,
         note: 'Weightage: TL = average of reporting designers; Manager = equal average of reporting TLs. Counts & hours remain totals. Team Total counts designers once.',
       },
       individual,

@@ -52,6 +52,7 @@ model Organization {
   workHoursStart         String   @default("09:00")
   workHoursEnd           String   @default("18:00")
   gracePeriodMinutes           Int      @default(15)
+  breakDurationMinutes         Int      @default(60) // 60 mins break by default
   productivityFactor           Float    @default(90.0) // 90%
   capacityFactorMember         Float    @default(100.0) // 100%
   capacityFactorLead           Float    @default(90.0) // 90%

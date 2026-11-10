@@ -136,6 +136,7 @@ export default function RecActsFullyFunctionalApp() {
     workHoursStart: '09:00',
     workHoursEnd: '18:00',
     gracePeriodMinutes: 15,
+    breakDurationMinutes: 60,
     workDays: 'Mon,Tue,Wed,Thu,Fri',
     timezone: 'Asia/Kolkata (UTC+05:30)',
     attendanceTrackingEnabled: true,
@@ -766,9 +767,6 @@ export default function RecActsFullyFunctionalApp() {
               <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
                 RecActs
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Work • Track • Achieve • Multi-Tenant Workforce Platform
-              </p>
             </div>
           </div>
 
@@ -937,17 +935,9 @@ export default function RecActsFullyFunctionalApp() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
               <Zap className="w-4 h-4 fill-white" />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-sm tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-                  RecActs
-                </span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  {organization?.name || 'BlindMatrix'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-none">Work • Track • Achieve</p>
-            </div>
+            <span className="font-bold text-base tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+              RecActs
+            </span>
           </div>
 
           {/* Quick Search Bar */}
@@ -964,48 +954,16 @@ export default function RecActsFullyFunctionalApp() {
           </div>
         </div>
 
-        {/* Center: Live Attendance Pill with Quick Clock-in/out */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/[0.08] text-xs">
-          <div className={`w-2 h-2 rounded-full ${settingsData.attendanceTrackingEnabled === false ? 'bg-slate-400' : attendance.isCheckedIn ? 'bg-emerald-500 animate-pulse-dot' : 'bg-slate-400'}`} />
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
-            {settingsData.attendanceTrackingEnabled === false
-              ? 'Attendance Tracking Disabled'
-              : attendance.isCheckedIn
-              ? `Session Active • ${Math.floor(attendance.totalMinutes / 60)}h ${attendance.totalMinutes % 60}m`
-              : settingsData.autoCheckInOutEnabled
-              ? 'Auto Shifts Active'
-              : settingsData.attendanceMandatory
-              ? 'Clock-in Required'
-              : 'Flexible Clock-in • Checked Out'}
-          </span>
-          {settingsData.attendanceTrackingEnabled !== false && (
-            <>
-              <span className="text-slate-300 dark:text-slate-600">•</span>
-              {attendance.isCheckedIn ? (
-                <button
-                  onClick={handleCheckOut}
-                  className="text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:underline"
-                >
-                  End Session
-                </button>
-              ) : (
-                <button
-                  onClick={handleCheckIn}
-                  className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-                >
-                  Start Session
-                </button>
-              )}
-            </>
-          )}
-        </div>
+
 
         {/* Right: Authenticated User Profile & Sign Out (No arbitrary dev switcher) */}
         <div className="flex items-center gap-3">
-          {/* Verified Role Pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-semibold">
-            <Shield className="w-3.5 h-3.5" />
-            <span className="capitalize">{currentUser?.role || role}</span>
+          {/* Organization Name & Logo */}
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold">
+            <div className="w-4 h-4 rounded bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-xs">
+              <Building className="w-2.5 h-2.5" />
+            </div>
+            <span>{organization?.name || 'BlindMatrix'}</span>
           </div>
 
           {/* Dark / Light Toggle */}
@@ -1028,7 +986,7 @@ export default function RecActsFullyFunctionalApp() {
                   {currentUser?.name}
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Connected to Supabase" />
                 </p>
-                <p className="text-[10px] text-slate-400">{currentUser?.email}</p>
+                <p className="text-[10px] text-slate-400 capitalize">{currentUser?.role || role}</p>
               </div>
             </div>
             <button
@@ -2881,24 +2839,38 @@ export default function RecActsFullyFunctionalApp() {
                           <span className="font-bold">{kpiData?.settings?.workingDays || 22} days</span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
-                          <span className="text-slate-400">Working Hours per Day</span>
-                          <span className="font-bold">{kpiData?.settings?.dailyHours || 8} hrs</span>
+                          <span className="text-slate-400">Shift & Break Duration</span>
+                          <span className="font-bold">{kpiData?.settings?.shiftHours || 9}h shift − {kpiData?.settings?.breakDurationMinutes ?? 60}m break</span>
+                        </div>
+                        <div className="py-2.5 flex items-center justify-between">
+                          <span className="text-slate-400">Net Working Hours / Day (Shift − Break)</span>
+                          <span className="font-bold">{kpiData?.settings?.dailyHours ?? 8} hrs</span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Productive Factor</span>
-                          <span className="font-bold">{((kpiData?.settings?.productiveFactor || 0.9) * 100).toFixed(0)}% (0.9)</span>
+                          <span className="font-bold">{((kpiData?.settings?.productiveFactor || 0.9) * 100).toFixed(0)}% ({(kpiData?.settings?.productiveFactor || 0.9).toFixed(2)})</span>
+                        </div>
+                        <div className="py-2.5 flex items-center justify-between">
+                          <span className="text-slate-400">Daily Productive Hours</span>
+                          <span className="font-bold text-emerald-400">{((kpiData?.settings?.dailyHours ?? 8) * (kpiData?.settings?.productiveFactor || 0.9)).toFixed(2)} hrs/day</span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Designer Target (100% capacity)</span>
-                          <span className="font-bold text-indigo-400">158 hrs (22 × 8 × 0.9)</span>
+                          <span className="font-bold text-indigo-400">
+                            {Math.round((kpiData?.settings?.workingDays || 22) * (kpiData?.settings?.dailyHours ?? 8) * (kpiData?.settings?.productiveFactor || 0.9))} hrs
+                          </span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Team Lead Target (90% capacity)</span>
-                          <span className="font-bold text-indigo-400">143 hrs (22 × 8 × 0.9 × 0.9)</span>
+                          <span className="font-bold text-indigo-400">
+                            {Math.round((kpiData?.settings?.workingDays || 22) * (kpiData?.settings?.dailyHours ?? 8) * (kpiData?.settings?.productiveFactor || 0.9) * 0.9)} hrs
+                          </span>
                         </div>
                         <div className="py-2.5 flex items-center justify-between">
                           <span className="text-slate-400">Manager Target (80% capacity)</span>
-                          <span className="font-bold text-indigo-400">127 hrs (22 × 8 × 0.9 × 0.8)</span>
+                          <span className="font-bold text-indigo-400">
+                            {Math.round((kpiData?.settings?.workingDays || 22) * (kpiData?.settings?.dailyHours ?? 8) * (kpiData?.settings?.productiveFactor || 0.9) * 0.8)} hrs
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -3183,8 +3155,19 @@ export default function RecActsFullyFunctionalApp() {
                     <label className="font-semibold block mb-1">Grace Period (Minutes)</label>
                     <input
                       type="number"
-                      value={settingsData.gracePeriodMinutes || 15}
+                      value={settingsData.gracePeriodMinutes ?? 15}
                       onChange={(e) => setSettingsData({ ...settingsData, gracePeriodMinutes: Number(e.target.value) })}
+                      className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">Break Duration (Minutes)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={240}
+                      value={settingsData.breakDurationMinutes ?? 60}
+                      onChange={(e) => setSettingsData({ ...settingsData, breakDurationMinutes: Number(e.target.value) })}
                       className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
                     />
                   </div>
@@ -3192,12 +3175,57 @@ export default function RecActsFullyFunctionalApp() {
                     <label className="font-semibold block mb-1">Productivity Factor (%)</label>
                     <input
                       type="number"
-                      value={settingsData.productivityFactor || 90}
+                      value={settingsData.productivityFactor ?? 90}
                       onChange={(e) => setSettingsData({ ...settingsData, productivityFactor: Number(e.target.value) })}
                       className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] font-bold text-indigo-400"
                     />
                   </div>
                 </div>
+
+                {/* Live Calculated Overall Working & Productive Hours Preview */}
+                {(() => {
+                  const [sH, sM] = (settingsData.workHoursStart || '09:00').split(':').map(Number);
+                  const [eH, eM] = (settingsData.workHoursEnd || '18:00').split(':').map(Number);
+                  let shiftMins = (eH * 60 + (eM || 0)) - (sH * 60 + (sM || 0));
+                  if (isNaN(shiftMins) || shiftMins <= 0) {
+                    shiftMins = !isNaN(sH) && !isNaN(eH) && eH < sH
+                      ? (24 * 60 - (sH * 60 + (sM || 0))) + (eH * 60 + (eM || 0))
+                      : 540;
+                  }
+                  const breakMins = Math.max(0, Number(settingsData.breakDurationMinutes ?? 60));
+                  const netWorkingMins = Math.max(0, shiftMins - breakMins);
+                  const shiftHrs = (shiftMins / 60).toFixed(2).replace(/\.00$/, '');
+                  const breakHrs = (breakMins / 60).toFixed(2).replace(/\.00$/, '');
+                  const netWorkingHrs = netWorkingMins / 60;
+                  const factor = (Number(settingsData.productivityFactor ?? 90)) / 100;
+                  const dailyProductiveHrs = netWorkingHrs * factor;
+                  const monthlyProductiveHrs = Math.round(22 * dailyProductiveHrs);
+
+                  return (
+                    <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-4 text-xs">
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-indigo-600 dark:text-indigo-400">Overall Working & Productive Hour Formula (Shift Hour − Break)</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Total Shift ({shiftHrs}h) − Break ({breakMins}m / {breakHrs}h) = <strong className="text-slate-800 dark:text-slate-200">{netWorkingHrs.toFixed(2).replace(/\.00$/, '')}h Net Working</strong>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-5">
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Net Working / Day</p>
+                          <p className="text-base font-extrabold text-slate-800 dark:text-white">{netWorkingHrs.toFixed(2).replace(/\.00$/, '')}h</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Productive / Day ({Math.round(factor * 100)}%)</p>
+                          <p className="text-base font-extrabold text-emerald-500">{dailyProductiveHrs.toFixed(2).replace(/\.00$/, '')}h</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Monthly Target (22d)</p>
+                          <p className="text-base font-extrabold text-indigo-500">{monthlyProductiveHrs}h</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* 2. Attendance Policy & Automation Controls */}

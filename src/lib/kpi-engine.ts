@@ -22,6 +22,39 @@ export const DEFAULT_KPI_SETTINGS: KpiSettings = {
   deduction3Reassign: 0.1,
 };
 
+/**
+ * Calculates shift hours, break hours, and net daily working hours
+ * based on (Shift Hour - Break Duration).
+ */
+export function calculateDailyWorkingHours(
+  workHoursStart: string = '09:00',
+  workHoursEnd: string = '18:00',
+  breakDurationMinutes: number = 60
+): {
+  shiftHours: number;
+  breakHours: number;
+  dailyWorkingHours: number;
+} {
+  const [sH, sM] = (workHoursStart || '09:00').split(':').map(Number);
+  const [eH, eM] = (workHoursEnd || '18:00').split(':').map(Number);
+
+  let shiftMins = (eH * 60 + (eM || 0)) - (sH * 60 + (sM || 0));
+  if (isNaN(shiftMins) || shiftMins <= 0) {
+    shiftMins = !isNaN(sH) && !isNaN(eH) && eH < sH
+      ? (24 * 60 - (sH * 60 + (sM || 0))) + (eH * 60 + (eM || 0))
+      : 540;
+  }
+
+  const breakMins = Math.max(0, Number(breakDurationMinutes ?? 60));
+  const netWorkingMins = Math.max(0, shiftMins - breakMins);
+
+  return {
+    shiftHours: Number((shiftMins / 60).toFixed(2)),
+    breakHours: Number((breakMins / 60).toFixed(2)),
+    dailyWorkingHours: Number((netWorkingMins / 60).toFixed(2)),
+  };
+}
+
 export type KpiRating = 'Excellent' | 'Good' | 'Average' | 'Needs Improvement';
 
 export function getRating(achievementPercent: number): KpiRating {

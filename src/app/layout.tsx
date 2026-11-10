@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'RecActs — Work. Track. Achieve.',
+  title: 'RecActs',
   description:
     'Production Multi-Tenant SaaS Web Application for Requirements Management, Time Logs, Approvals, Gantt Timelines, Blockers, Leave Planning, KPI Engine & God Mode Administration.',
   icons: {

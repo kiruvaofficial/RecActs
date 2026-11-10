@@ -58,13 +58,15 @@ export async function processAutoAttendance({
       }
     }
 
-    // 4. Shift timings
+    // 4. Shift timings & net working duration (shift - break)
     const startTime = org.workHoursStart || '09:00';
     const endTime = org.workHoursEnd || '18:00';
     const [sH, sM] = startTime.split(':').map(Number);
     const [eH, eM] = endTime.split(':').map(Number);
     let shiftDuration = (eH * 60 + eM) - (sH * 60 + sM);
     if (shiftDuration <= 0) shiftDuration = 540; // fallback to standard 9h / 540m
+    const breakMins = org.breakDurationMinutes !== undefined ? Number(org.breakDurationMinutes) : 60;
+    const netWorkingDuration = Math.max(0, shiftDuration - breakMins);
 
     // 5. Query active members with existing sessions and approved leave requests
     const members = await prisma.organizationMembership.findMany({
@@ -104,7 +106,7 @@ export async function processAutoAttendance({
             where: { id: openSession.id },
             data: {
               checkOutTime: endTime,
-              totalMinutes: sessionDuration > 0 ? sessionDuration : shiftDuration,
+              totalMinutes: sessionDuration > 0 ? Math.max(0, sessionDuration - breakMins) : netWorkingDuration,
             },
           });
         }
@@ -127,7 +129,7 @@ export async function processAutoAttendance({
           workDate,
           checkInTime: startTime,
           checkOutTime: endTime,
-          totalMinutes: shiftDuration,
+          totalMinutes: netWorkingDuration,
           status: 'Present',
           isManual: false,
         })),

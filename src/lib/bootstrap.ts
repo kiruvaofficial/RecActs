@@ -3,6 +3,7 @@ import { processAutoAttendance } from '@/lib/auto-attendance';
 import {
   calculateDepartmentKpi,
   calculateTicketDeduction,
+  calculateDailyWorkingHours,
   DEFAULT_KPI_SETTINGS,
   StaffKpiInput,
   KpiSettings,
@@ -99,9 +100,14 @@ export async function getBootstrapData({
   }
 
   const org = organization;
+  const { shiftHours, breakHours, dailyWorkingHours } = calculateDailyWorkingHours(
+    org?.workHoursStart || '09:00',
+    org?.workHoursEnd || '18:00',
+    org?.breakDurationMinutes ?? 60
+  );
   const kpiSettings: KpiSettings = {
     workingDays: 22,
-    dailyHours: 8,
+    dailyHours: dailyWorkingHours,
     productiveFactor: (org?.productivityFactor || 90) / 100,
     capacityMember: (org?.capacityFactorMember || 100) / 100,
     capacityLead: (org?.capacityFactorLead || 90) / 100,
@@ -651,6 +657,9 @@ export async function getBootstrapData({
     settings: {
       month: formatMonthName(period),
       workingDays: kpiSettings.workingDays,
+      shiftHours,
+      breakHours,
+      breakDurationMinutes: org?.breakDurationMinutes ?? 60,
       dailyHours: kpiSettings.dailyHours,
       productiveFactor: kpiSettings.productiveFactor,
       capacityMember: kpiSettings.capacityMember,
@@ -659,7 +668,7 @@ export async function getBootstrapData({
       deduction1Reassign: kpiSettings.deduction1Reassign,
       deduction2Reassign: kpiSettings.deduction2Reassign,
       deduction3Reassign: kpiSettings.deduction3Reassign,
-      formula: 'Target = (Working Days - Leave Days) × Daily Hours (8) × Productive Factor (0.9) × Capacity %',
+      formula: `Target = (Working Days - Leave Days) × Net Daily Hours (${kpiSettings.dailyHours}h = ${shiftHours}h shift - ${breakHours}h break) × Productive Factor (${Math.round(kpiSettings.productiveFactor * 100)}%) × Capacity %`,
       note: 'Weightage: TL = average of reporting designers; Manager = equal average of reporting TLs.',
     },
     individual,
