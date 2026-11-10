@@ -55,6 +55,17 @@ import {
   Database,
   FileSpreadsheet,
 } from 'lucide-react';
+import {
+  DashboardSkeleton,
+  ActivitiesSkeleton,
+  AttendanceSkeleton,
+  TicketsSkeleton,
+  ApprovalsSkeleton,
+  KpiSkeleton,
+  BlockersSkeleton,
+  LeaveSkeleton,
+  GenericTabSkeleton,
+} from '@/components/Skeletons';
 
 export default function RecActsFullyFunctionalApp() {
   // Navigation & Role State
@@ -64,6 +75,23 @@ export default function RecActsFullyFunctionalApp() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ticketViewMode, setTicketViewMode] = useState<'board' | 'table'>('board');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Data Loading & Tab Skeleton State
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
+  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({ dash: false });
+  const [tabTransitioning, setTabTransitioning] = useState<string | null>(null);
+
+  const handleTabChange = (newTab: string) => {
+    if (newTab === activeTab) return;
+    setActiveTab(newTab);
+    if (!visitedTabs[newTab]) {
+      setTabTransitioning(newTab);
+      setTimeout(() => {
+        setVisitedTabs((prev) => ({ ...prev, [newTab]: true }));
+        setTabTransitioning(null);
+      }, 200);
+    }
+  };
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -135,6 +163,7 @@ export default function RecActsFullyFunctionalApp() {
 
   const handleMonthChange = async (month: string) => {
     setSelectedMonth(month);
+    setIsDataLoading(true);
     try {
       const kpiRes = await fetch(`/api/kpi/calculate?period=${month}`);
       if (kpiRes.ok) {
@@ -145,6 +174,8 @@ export default function RecActsFullyFunctionalApp() {
       }
     } catch (err) {
       console.error('Failed to reload KPI for month:', err);
+    } finally {
+      setIsDataLoading(false);
     }
   };
 
@@ -228,6 +259,8 @@ export default function RecActsFullyFunctionalApp() {
           } catch {}
           setAuthChecking(false);
           setLoginLoading(false);
+          setIsDataLoading(false);
+          setVisitedTabs({ dash: true });
         } else {
           await loadAllData();
         }
@@ -272,6 +305,7 @@ export default function RecActsFullyFunctionalApp() {
 
   // Load All Data from REST APIs
   const loadAllData = async (monthOverride?: string) => {
+    setIsDataLoading(true);
     try {
       const month = monthOverride || selectedMonth || '2026-10';
       const date = '2026-10-31';
@@ -284,6 +318,7 @@ export default function RecActsFullyFunctionalApp() {
           setIsAuthenticated(false);
           setCurrentUser(null);
           setAuthChecking(false);
+          setIsDataLoading(false);
           return;
         }
 
@@ -304,6 +339,8 @@ export default function RecActsFullyFunctionalApp() {
         setAuthChecking(false);
 
         applyBootstrapData(data);
+        setIsDataLoading(false);
+        setVisitedTabs((prev) => ({ ...prev, [activeTab]: true }));
 
         try {
           sessionStorage.setItem('recacts_bootstrap_snapshot', JSON.stringify({
@@ -323,6 +360,7 @@ export default function RecActsFullyFunctionalApp() {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setAuthChecking(false);
+        setIsDataLoading(false);
         return;
       }
 
@@ -331,6 +369,7 @@ export default function RecActsFullyFunctionalApp() {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setAuthChecking(false);
+        setIsDataLoading(false);
         return;
       }
 
@@ -372,8 +411,11 @@ export default function RecActsFullyFunctionalApp() {
         const blk = await blkRes.json();
         setBlockers(blk.blockers || []);
       }
+      setIsDataLoading(false);
     } catch (err) {
       console.error('Error loading RecActs data:', err);
+    } finally {
+      setIsDataLoading(false);
     }
   };
 
@@ -406,6 +448,8 @@ export default function RecActsFullyFunctionalApp() {
           }
           if (cached.bootstrap) {
             applyBootstrapData(cached.bootstrap);
+            setIsDataLoading(false);
+            setVisitedTabs({ dash: true });
           }
           setAuthChecking(false);
         }
@@ -653,7 +697,7 @@ export default function RecActsFullyFunctionalApp() {
     const isActive = activeTab === id;
     return (
       <button
-        onClick={() => setActiveTab(id)}
+        onClick={() => handleTabChange(id)}
         className={`group w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
           isActive
             ? 'bg-indigo-600/10 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400 font-semibold shadow-xs'
@@ -885,7 +929,7 @@ export default function RecActsFullyFunctionalApp() {
       <header className="sticky top-0 z-40 h-14 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/75 dark:bg-[#090D16]/80 backdrop-blur-xl px-5 flex items-center justify-between">
         {/* Brand & Organization */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab('dash')}>
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => handleTabChange('dash')}>
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
               <Zap className="w-4 h-4 fill-white" />
             </div>
@@ -1030,7 +1074,10 @@ export default function RecActsFullyFunctionalApp() {
           {/* ========================================================================= */}
           {/* 1. VIEW: DASHBOARD OVERVIEW */}
           {/* ========================================================================= */}
-          {activeTab === 'dash' && (() => {
+          {activeTab === 'dash' && (
+            (isDataLoading || !kpiData || tabTransitioning === 'dash') ? (
+              <DashboardSkeleton />
+            ) : (() => {
             // Resolve KPI for current user persona or default individual
             const kpiIndividual =
               kpiData?.staffKpis?.find(
@@ -1155,7 +1202,7 @@ export default function RecActsFullyFunctionalApp() {
                         <span>Trigger EOD Mailer</span>
                       </button>
                       <button
-                        onClick={() => setActiveTab('activities')}
+                        onClick={() => handleTabChange('activities')}
                         className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -1327,7 +1374,7 @@ export default function RecActsFullyFunctionalApp() {
                         <p className="text-xs text-slate-400">Shared weightage allocations and deliverable deadlines</p>
                       </div>
                       <button
-                        onClick={() => setActiveTab('tickets')}
+                        onClick={() => handleTabChange('tickets')}
                         className="text-xs text-indigo-500 font-semibold hover:underline flex items-center gap-1"
                       >
                         <span>Explore all {tickets.length} tickets</span>
@@ -1379,7 +1426,7 @@ export default function RecActsFullyFunctionalApp() {
                         <p className="text-xs text-slate-400">Live attendance for {currentUser?.team || 'Alpha & Beta'}</p>
                       </div>
                       <button
-                        onClick={() => setActiveTab('attendance')}
+                        onClick={() => handleTabChange('attendance')}
                         className="text-xs text-indigo-500 font-semibold hover:underline"
                       >
                         Shift board →
@@ -1425,12 +1472,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             );
-          })()}
+          })()
+          )}
 
           {/* ========================================================================= */}
           {/* 2. VIEW: DAILY WORK LOGS */}
           {/* ========================================================================= */}
           {activeTab === 'activities' && (
+            (isDataLoading || tabTransitioning === 'activities') ? (
+              <ActivitiesSkeleton />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -1627,12 +1678,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 3. VIEW: ATTENDANCE & WORK SESSIONS */}
           {/* ========================================================================= */}
           {activeTab === 'attendance' && (
+            (isDataLoading || tabTransitioning === 'attendance') ? (
+              <AttendanceSkeleton />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -1795,12 +1850,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 4. VIEW: TICKETS & SHARED WEIGHTAGES */}
           {/* ========================================================================= */}
           {activeTab === 'tickets' && (
+            (isDataLoading || tabTransitioning === 'tickets') ? (
+              <TicketsSkeleton viewMode={ticketViewMode} />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -1994,12 +2053,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               )}
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 5. VIEW: INTERACTIVE GANTT TIMELINE */}
           {/* ========================================================================= */}
           {activeTab === 'timeline' && (
+            (isDataLoading || tabTransitioning === 'timeline') ? (
+              <GenericTabSkeleton title="Interactive Gantt Timeline" />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -2066,13 +2129,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 6. VIEW: APPROVALS QUEUE */}
           {/* ========================================================================= */}
           {activeTab === 'approvals' && (
-            !hasPermission(role as FunctionalRole, 'work_logs:approve') ? (
+            (isDataLoading || tabTransitioning === 'approvals') ? (
+              <ApprovalsSkeleton />
+            ) : !hasPermission(role as FunctionalRole, 'work_logs:approve') ? (
               <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto">
                 <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
                   <Lock className="w-6 h-6" />
@@ -2082,7 +2148,7 @@ export default function RecActsFullyFunctionalApp() {
                   Timesheet approvals are restricted to Team Leads, Managers, and Organization Owners.
                   Your current verified role is <span className="font-semibold text-slate-200">{currentUser?.role || role}</span>.
                 </p>
-                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                <button onClick={() => handleTabChange('dash')} className="btn-modern-primary px-4 py-2 text-xs">
                   Return to Dashboard
                 </button>
               </div>
@@ -2177,6 +2243,9 @@ export default function RecActsFullyFunctionalApp() {
           {/* 7. VIEW: BLOCKERS BOARD */}
           {/* ========================================================================= */}
           {activeTab === 'blockers' && (
+            (isDataLoading || tabTransitioning === 'blockers') ? (
+              <BlockersSkeleton />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -2251,12 +2320,16 @@ export default function RecActsFullyFunctionalApp() {
                 ))}
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 8. VIEW: LEAVE PLANNER */}
           {/* ========================================================================= */}
           {activeTab === 'leave' && (
+            (isDataLoading || tabTransitioning === 'leave') ? (
+              <LeaveSkeleton />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -2364,12 +2437,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 9. VIEW: KPI & FORMULA ENGINE */}
           {/* ========================================================================= */}
           {activeTab === 'kpi' && (
+            (isDataLoading || !kpiData || tabTransitioning === 'kpi') ? (
+              <KpiSkeleton />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -2815,12 +2892,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               )}
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 10. VIEW: REPORTS & EOD HISTORY */}
           {/* ========================================================================= */}
           {activeTab === 'reports' && (
+            (isDataLoading || tabTransitioning === 'reports') ? (
+              <GenericTabSkeleton title="Reports & EOD Logs" />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -2913,13 +2994,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 11. VIEW: AUDIT LOGS */}
           {/* ========================================================================= */}
           {activeTab === 'audit' && (
-            !hasPermission(role as FunctionalRole, 'audit:view') ? (
+            (isDataLoading || tabTransitioning === 'audit' || auditLogs.length === 0) ? (
+              <GenericTabSkeleton title="Audit Logs & Compliance Trail" />
+            ) : !hasPermission(role as FunctionalRole, 'audit:view') ? (
               <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto">
                 <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
                   <Lock className="w-6 h-6" />
@@ -2929,7 +3013,7 @@ export default function RecActsFullyFunctionalApp() {
                   Audit logs and compliance trails are restricted to Department Managers, HR, and Organization Owners.
                   Your current role is <span className="font-semibold text-slate-200">{currentUser?.role || role}</span>.
                 </p>
-                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                <button onClick={() => handleTabChange('dash')} className="btn-modern-primary px-4 py-2 text-xs">
                   Return to Dashboard
                 </button>
               </div>
@@ -2978,6 +3062,9 @@ export default function RecActsFullyFunctionalApp() {
           {/* 12. VIEW: TENANT SETTINGS */}
           {/* ========================================================================= */}
           {activeTab === 'settings' && (
+            (isDataLoading || tabTransitioning === 'settings') ? (
+              <GenericTabSkeleton title="Organization Parameters & Policies" />
+            ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
                 <div>
@@ -3038,13 +3125,16 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
           {/* 13. VIEW: PLATFORM GOD MODE */}
           {/* ========================================================================= */}
           {activeTab === 'god' && (
-            !(role === 'god' || currentUser?.isPlatformAdmin) ? (
+            (isDataLoading || tabTransitioning === 'god' || (role === 'god' && godOrgs.length === 0)) ? (
+              <GenericTabSkeleton title="God Mode Platform Administration" />
+            ) : !(role === 'god' || currentUser?.isPlatformAdmin) ? (
               <div className="modern-card p-12 text-center space-y-4 max-w-lg mx-auto border-purple-500/20">
                 <div className="w-12 h-12 rounded-full bg-purple-500/10 text-purple-400 mx-auto flex items-center justify-center">
                   <Shield className="w-6 h-6" />
@@ -3054,7 +3144,7 @@ export default function RecActsFullyFunctionalApp() {
                   Platform administration console requires root platform super-admin privileges.
                   Your current account does not have platform-level access.
                 </p>
-                <button onClick={() => setActiveTab('dash')} className="btn-modern-primary px-4 py-2 text-xs">
+                <button onClick={() => handleTabChange('dash')} className="btn-modern-primary px-4 py-2 text-xs">
                   Return to Dashboard
                 </button>
               </div>
