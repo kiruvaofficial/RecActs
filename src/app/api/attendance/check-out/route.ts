@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
+import { invalidateBootstrapCache } from '@/lib/bootstrap';
 
 export async function POST(req: NextRequest) {
   const { error, context } = await requireTenantContext();
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       action: `Checked out at ${timeStr} (Total: ${Math.floor(duration / 60)}h ${duration % 60}m)`,
     });
 
+    invalidateBootstrapCache(context.organizationId);
     return NextResponse.json({ success: true, session: updated });
   } catch (err) {
     console.error('Error in check-out:', err);

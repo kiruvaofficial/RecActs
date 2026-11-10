@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
+import { invalidateBootstrapCache } from '@/lib/bootstrap';
 
 export async function POST(req: NextRequest) {
   const { error, context } = await requireTenantContext();
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
       action: `Checked in at ${timeStr} (${status})`,
     });
 
+    invalidateBootstrapCache(context.organizationId);
     return NextResponse.json({ success: true, session });
   } catch (err) {
     console.error('Error in check-in:', err);

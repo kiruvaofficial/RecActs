@@ -158,6 +158,29 @@ export default function RecActsFullyFunctionalApp() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  // Instant Hydration Helper for Server Bootstrap Payload
+  const applyBootstrapData = (data: any) => {
+    if (!data) return;
+    if (data.attendance) setAttendance(data.attendance);
+    if (data.corrections) setCorrections(data.corrections || []);
+    if (data.workLog) {
+      setWorkLog({
+        submissionStatus: data.workLog.submissionStatus || 'Draft',
+        activities: data.workLog.activities || [],
+        history: data.workLog.history || [],
+      });
+    }
+    if (data.tickets) setTickets(data.tickets || []);
+    if (data.approvals) setApprovals(data.approvals || []);
+    if (data.blockers) setBlockers(data.blockers || []);
+    if (data.leaveData) setLeaveData(data.leaveData || { leaveTypes: [], balances: [], myRequests: [], teamRequests: [], holidays: [] });
+    if (data.kpiData) setKpiData(data.kpiData);
+    if (data.targetOverrides) setTargetOverrides(data.targetOverrides || []);
+    if (data.negativeImpacts) setNegativeImpacts(data.negativeImpacts || []);
+    if (data.eodHistory) setEodHistory(data.eodHistory || []);
+    if (data.settingsData) setSettingsData(data.settingsData);
+  };
+
   // Supabase Auth Handlers
   const handleSupabaseLogin = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
     if (e) e.preventDefault();
@@ -176,7 +199,7 @@ export default function RecActsFullyFunctionalApp() {
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         setRole(data.activeRole || 'member');
-        setCurrentUser({
+        const userObj = {
           id: data.activeMembership?.id || data.user.id,
           userId: data.user.id,
           name: data.user.name,
@@ -185,11 +208,29 @@ export default function RecActsFullyFunctionalApp() {
           role: data.activeMembership?.designation || (data.activeRole ? data.activeRole.toUpperCase() : 'Member'),
           team: data.activeMembership?.team?.name || 'BlindMatrix',
           isPlatformAdmin: data.user.isPlatformAdmin,
-        });
+        };
+        setCurrentUser(userObj);
         if (data.organization) setOrganization(data.organization);
         setModalType(null);
         showToast(`Authenticated as ${data.user.name} (${(data.activeRole || 'member').toUpperCase()})`);
-        await loadAllData();
+
+        // Fast-path: Hydrate bootstrap data bundled directly in login response (0ms delay!)
+        if (data.bootstrap) {
+          applyBootstrapData(data.bootstrap);
+          try {
+            sessionStorage.setItem('recacts_bootstrap_snapshot', JSON.stringify({
+              user: userObj,
+              role: data.activeRole || 'member',
+              organization: data.organization,
+              bootstrap: data.bootstrap,
+              savedAt: Date.now(),
+            }));
+          } catch {}
+          setAuthChecking(false);
+          setLoginLoading(false);
+        } else {
+          await loadAllData();
+        }
       } else {
         setLoginError(data.error || 'Authentication failed');
         showToast(data.error || 'Authentication failed');
@@ -204,6 +245,9 @@ export default function RecActsFullyFunctionalApp() {
 
   const handleSupabaseLogout = async () => {
     try {
+      try {
+        sessionStorage.removeItem('recacts_bootstrap_snapshot');
+      } catch {}
       await fetch('/api/auth/logout', { method: 'POST' });
       setIsAuthenticated(false);
       setCurrentUser(null);
@@ -245,7 +289,7 @@ export default function RecActsFullyFunctionalApp() {
 
         setIsAuthenticated(true);
         setRole(data.activeRole || 'member');
-        setCurrentUser({
+        const userObj = {
           id: data.activeMembership?.id || data.user.id,
           userId: data.user.id,
           name: data.user.name,
@@ -254,28 +298,22 @@ export default function RecActsFullyFunctionalApp() {
           role: data.activeMembership?.designation || (data.activeRole ? data.activeRole.toUpperCase() : 'Member'),
           team: data.activeMembership?.team?.name || 'BlindMatrix',
           isPlatformAdmin: data.user.isPlatformAdmin,
-        });
+        };
+        setCurrentUser(userObj);
         if (data.organization) setOrganization(data.organization);
         setAuthChecking(false);
 
-        if (data.attendance) setAttendance(data.attendance);
-        if (data.corrections) setCorrections(data.corrections || []);
-        if (data.workLog) {
-          setWorkLog({
-            submissionStatus: data.workLog.submissionStatus || 'Draft',
-            activities: data.workLog.activities || [],
-            history: data.workLog.history || [],
-          });
-        }
-        if (data.tickets) setTickets(data.tickets || []);
-        if (data.approvals) setApprovals(data.approvals || []);
-        if (data.blockers) setBlockers(data.blockers || []);
-        if (data.leaveData) setLeaveData(data.leaveData || { leaveTypes: [], balances: [], myRequests: [], teamRequests: [], holidays: [] });
-        if (data.kpiData) setKpiData(data.kpiData);
-        if (data.targetOverrides) setTargetOverrides(data.targetOverrides || []);
-        if (data.negativeImpacts) setNegativeImpacts(data.negativeImpacts || []);
-        if (data.eodHistory) setEodHistory(data.eodHistory || []);
-        if (data.settingsData) setSettingsData(data.settingsData);
+        applyBootstrapData(data);
+
+        try {
+          sessionStorage.setItem('recacts_bootstrap_snapshot', JSON.stringify({
+            user: userObj,
+            role: data.activeRole || 'member',
+            organization: data.organization,
+            bootstrap: data,
+            savedAt: Date.now(),
+          }));
+        } catch {}
         return;
       }
 
@@ -354,6 +392,26 @@ export default function RecActsFullyFunctionalApp() {
   }, [activeTab, role]);
 
   useEffect(() => {
+    // Instant cache hydration for 0ms initial load
+    try {
+      const cachedStr = sessionStorage.getItem('recacts_bootstrap_snapshot');
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (cached && Date.now() - (cached.savedAt || 0) < 5 * 60 * 1000) {
+          if (cached.user) {
+            setIsAuthenticated(true);
+            setRole(cached.role || 'member');
+            setCurrentUser(cached.user);
+            if (cached.organization) setOrganization(cached.organization);
+          }
+          if (cached.bootstrap) {
+            applyBootstrapData(cached.bootstrap);
+          }
+          setAuthChecking(false);
+        }
+      }
+    } catch {}
+
     loadAllData();
   }, []);
 
