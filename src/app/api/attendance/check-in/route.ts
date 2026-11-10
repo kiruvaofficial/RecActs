@@ -10,6 +10,13 @@ export async function POST(req: NextRequest) {
   const { error, context } = await requireTenantContext();
   if (error || !context) return error;
 
+  if (context.organization.attendanceTrackingEnabled === false) {
+    return NextResponse.json(
+      { error: 'Attendance check-in is disabled by organization policy.' },
+      { status: 400 }
+    );
+  }
+
   const now = new Date();
   const workDate = now.toISOString().split('T')[0];
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;

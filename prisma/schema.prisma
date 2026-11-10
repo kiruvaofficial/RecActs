@@ -51,11 +51,15 @@ model Organization {
   workDays               String   @default("Mon,Tue,Wed,Thu,Fri")
   workHoursStart         String   @default("09:00")
   workHoursEnd           String   @default("18:00")
-  gracePeriodMinutes     Int      @default(15)
-  productivityFactor     Float    @default(90.0) // 90%
-  capacityFactorMember   Float    @default(100.0) // 100%
-  capacityFactorLead     Float    @default(90.0) // 90%
-  capacityFactorManager  Float    @default(80.0) // 80%
+  gracePeriodMinutes           Int      @default(15)
+  productivityFactor           Float    @default(90.0) // 90%
+  capacityFactorMember         Float    @default(100.0) // 100%
+  capacityFactorLead           Float    @default(90.0) // 90%
+  capacityFactorManager        Float    @default(80.0) // 80%
+  attendanceTrackingEnabled    Boolean  @default(true)
+  attendanceMandatory          Boolean  @default(false)
+  autoCheckInOutEnabled        Boolean  @default(false)
+  autoCheckInOutExcludeLeaves  Boolean  @default(true)
   kpiAggregationMethod   String   @default("weighted") // weighted or equal
   subscriptionTier       String   @default("Business") // Starter, Business, Enterprise, Trial
   subscriptionStatus     String   @default("Active") // Active, Suspended, Trial

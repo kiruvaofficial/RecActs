@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
+import { processAutoAttendance } from '@/lib/auto-attendance';
 
 export async function GET(req: NextRequest) {
   const { error, context } = await requireTenantContext();
@@ -12,6 +13,15 @@ export async function GET(req: NextRequest) {
   const workDate = url.searchParams.get('date') || '2026-10-31';
 
   try {
+    // Process automated shift check-in & check-out if enabled
+    if (context.organization.autoCheckInOutEnabled) {
+      await processAutoAttendance({
+        organizationId: context.organizationId,
+        workDate,
+        orgSettings: context.organization,
+      });
+    }
+
     // Current user's sessions for the day
     const mySessions = await prisma.attendanceSession.findMany({
       where: {
@@ -82,6 +92,12 @@ export async function GET(req: NextRequest) {
       sessions: mySessions,
       totalMinutes,
       teamAttendance,
+      policy: {
+        attendanceTrackingEnabled: context.organization.attendanceTrackingEnabled,
+        attendanceMandatory: context.organization.attendanceMandatory,
+        autoCheckInOutEnabled: context.organization.autoCheckInOutEnabled,
+        autoCheckInOutExcludeLeaves: context.organization.autoCheckInOutExcludeLeaves,
+      },
     });
   } catch (err) {
     console.error('Error fetching attendance status:', err);

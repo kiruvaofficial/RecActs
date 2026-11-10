@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
+import { invalidateBootstrapCache } from '@/lib/bootstrap';
 
 export async function GET() {
   const { error, context } = await requireTenantContext();
@@ -42,6 +43,10 @@ export async function PATCH(req: NextRequest) {
       gracePeriodMinutes,
       workDays,
       timezone,
+      attendanceTrackingEnabled,
+      attendanceMandatory,
+      autoCheckInOutEnabled,
+      autoCheckInOutExcludeLeaves,
     } = body;
 
     const updated = await prisma.organization.update({
@@ -53,15 +58,21 @@ export async function PATCH(req: NextRequest) {
         gracePeriodMinutes: gracePeriodMinutes !== undefined ? Number(gracePeriodMinutes) : undefined,
         workDays: workDays || undefined,
         timezone: timezone || undefined,
+        attendanceTrackingEnabled: attendanceTrackingEnabled !== undefined ? Boolean(attendanceTrackingEnabled) : undefined,
+        attendanceMandatory: attendanceMandatory !== undefined ? Boolean(attendanceMandatory) : undefined,
+        autoCheckInOutEnabled: autoCheckInOutEnabled !== undefined ? Boolean(autoCheckInOutEnabled) : undefined,
+        autoCheckInOutExcludeLeaves: autoCheckInOutExcludeLeaves !== undefined ? Boolean(autoCheckInOutExcludeLeaves) : undefined,
       },
     });
+
+    invalidateBootstrapCache(context.organizationId);
 
     await logAuditEvent({
       organizationId: context.organizationId,
       actorMembershipId: context.membershipId,
       actorName: context.user.name,
       module: 'Settings',
-      action: `Updated organization settings (Productivity: ${updated.productivityFactor}%, Shift: ${updated.workHoursStart}-${updated.workHoursEnd})`,
+      action: `Updated organization settings (Attendance Tracking: ${updated.attendanceTrackingEnabled ? (updated.attendanceMandatory ? 'Mandatory' : 'Optional') : 'Disabled'}, Auto Check-in/out: ${updated.autoCheckInOutEnabled ? 'Enabled' : 'Disabled'}, Exclude Leaves: ${updated.autoCheckInOutExcludeLeaves})`,
     });
 
     return NextResponse.json({ success: true, organization: updated });

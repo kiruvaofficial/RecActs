@@ -138,6 +138,10 @@ export default function RecActsFullyFunctionalApp() {
     gracePeriodMinutes: 15,
     workDays: 'Mon,Tue,Wed,Thu,Fri',
     timezone: 'Asia/Kolkata (UTC+05:30)',
+    attendanceTrackingEnabled: true,
+    attendanceMandatory: false,
+    autoCheckInOutEnabled: false,
+    autoCheckInOutExcludeLeaves: true,
   });
   const [godOrgs, setGodOrgs] = useState<any[]>([]);
   const [featureFlags, setFeatureFlags] = useState<any[]>([]);
@@ -962,25 +966,37 @@ export default function RecActsFullyFunctionalApp() {
 
         {/* Center: Live Attendance Pill with Quick Clock-in/out */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/[0.08] text-xs">
-          <div className={`w-2 h-2 rounded-full ${attendance.isCheckedIn ? 'bg-emerald-500 animate-pulse-dot' : 'bg-slate-400'}`} />
+          <div className={`w-2 h-2 rounded-full ${settingsData.attendanceTrackingEnabled === false ? 'bg-slate-400' : attendance.isCheckedIn ? 'bg-emerald-500 animate-pulse-dot' : 'bg-slate-400'}`} />
           <span className="font-semibold text-slate-700 dark:text-slate-300">
-            {attendance.isCheckedIn ? `Session Active • ${Math.floor(attendance.totalMinutes / 60)}h ${attendance.totalMinutes % 60}m` : 'Checked Out'}
+            {settingsData.attendanceTrackingEnabled === false
+              ? 'Attendance Tracking Disabled'
+              : attendance.isCheckedIn
+              ? `Session Active • ${Math.floor(attendance.totalMinutes / 60)}h ${attendance.totalMinutes % 60}m`
+              : settingsData.autoCheckInOutEnabled
+              ? 'Auto Shifts Active'
+              : settingsData.attendanceMandatory
+              ? 'Clock-in Required'
+              : 'Flexible Clock-in • Checked Out'}
           </span>
-          <span className="text-slate-300 dark:text-slate-600">•</span>
-          {attendance.isCheckedIn ? (
-            <button
-              onClick={handleCheckOut}
-              className="text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:underline"
-            >
-              End Session
-            </button>
-          ) : (
-            <button
-              onClick={handleCheckIn}
-              className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              Start Session
-            </button>
+          {settingsData.attendanceTrackingEnabled !== false && (
+            <>
+              <span className="text-slate-300 dark:text-slate-600">•</span>
+              {attendance.isCheckedIn ? (
+                <button
+                  onClick={handleCheckOut}
+                  className="text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:underline"
+                >
+                  End Session
+                </button>
+              ) : (
+                <button
+                  onClick={handleCheckIn}
+                  className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  Start Session
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -1422,7 +1438,18 @@ export default function RecActsFullyFunctionalApp() {
                   <div className="modern-card p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="font-bold text-sm tracking-tight">Team Shift Monitor</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm tracking-tight">Team Shift Monitor</h3>
+                          <span className="pill-badge text-[10px] py-0.5 px-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            {settingsData.attendanceTrackingEnabled === false
+                              ? 'Tracking Off'
+                              : settingsData.autoCheckInOutEnabled
+                              ? 'Auto Shifts Active'
+                              : settingsData.attendanceMandatory
+                              ? 'Mandatory Policy'
+                              : 'Optional Policy'}
+                          </span>
+                        </div>
                         <p className="text-xs text-slate-400">Live attendance for {currentUser?.team || 'Alpha & Beta'}</p>
                       </div>
                       <button
@@ -1712,7 +1739,12 @@ export default function RecActsFullyFunctionalApp() {
                     <HelpCircle className="w-3.5 h-3.5" />
                     <span>Request Correction</span>
                   </button>
-                  {!attendance.isCheckedIn ? (
+                  {settingsData.attendanceTrackingEnabled === false ? (
+                    <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-xs text-slate-400">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Tracking Disabled by Policy</span>
+                    </div>
+                  ) : !attendance.isCheckedIn ? (
                     <button onClick={handleCheckIn} className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5">
                       <Play className="w-3.5 h-3.5 fill-white" />
                       <span>Clock In</span>
@@ -1736,9 +1768,28 @@ export default function RecActsFullyFunctionalApp() {
                     <h3 className="text-base font-bold">
                       {attendance.isCheckedIn ? 'Work Session Currently Active' : 'Session Ended / Clocked Out'}
                     </h3>
-                    <p className="text-xs text-slate-400">
-                      Check-in: {attendance.checkInTime || '08:50'} • Expected shift: 09:00 – 18:00 (15 min grace window)
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className={`pill-badge text-[10px] py-0.5 px-2.5 ${
+                        settingsData.attendanceTrackingEnabled === false
+                          ? 'bg-slate-500/15 text-slate-400'
+                          : settingsData.autoCheckInOutEnabled
+                          ? 'bg-indigo-500/15 text-indigo-400'
+                          : settingsData.attendanceMandatory
+                          ? 'bg-amber-500/15 text-amber-500'
+                          : 'bg-emerald-500/15 text-emerald-500'
+                      }`}>
+                        {settingsData.attendanceTrackingEnabled === false
+                          ? 'Policy: Tracking Disabled'
+                          : settingsData.autoCheckInOutEnabled
+                          ? `Policy: Automated Shift Check-In ${settingsData.autoCheckInOutExcludeLeaves ? '(Leaves Excluded)' : ''}`
+                          : settingsData.attendanceMandatory
+                          ? 'Policy: Mandatory Clock-In'
+                          : 'Policy: Flexible / Optional Check-In'}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        Check-in: {attendance.checkInTime || '08:50'} • Shift: {settingsData.workHoursStart || '09:00'} – {settingsData.workHoursEnd || '18:00'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -3080,18 +3131,33 @@ export default function RecActsFullyFunctionalApp() {
                 )}
               </div>
 
+              {/* 1. Organization Profile & Work Schedule */}
               <div className="modern-card p-6 space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-white/[0.06]">
+                  <Building className="w-4 h-4 text-indigo-500" />
+                  <h3 className="font-bold text-sm">Organization Profile & Schedule</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
                   <div>
                     <label className="font-semibold block mb-1">Organization Name</label>
-                    <input type="text" readOnly value="BlindMatrix" className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]" />
+                    <input type="text" readOnly value={organization?.name || "BlindMatrix"} className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]" />
                   </div>
                   <div>
                     <label className="font-semibold block mb-1">Timezone</label>
                     <input
                       type="text"
-                      value={settingsData.timezone}
+                      value={settingsData.timezone || ''}
                       onChange={(e) => setSettingsData({ ...settingsData, timezone: e.target.value })}
+                      className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">Working Days</label>
+                    <input
+                      type="text"
+                      value={settingsData.workDays || 'Mon,Tue,Wed,Thu,Fri'}
+                      onChange={(e) => setSettingsData({ ...settingsData, workDays: e.target.value })}
+                      placeholder="e.g. Mon,Tue,Wed,Thu,Fri"
                       className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
                     />
                   </div>
@@ -3100,27 +3166,177 @@ export default function RecActsFullyFunctionalApp() {
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={settingsData.workHoursStart}
+                        value={settingsData.workHoursStart || '09:00'}
                         onChange={(e) => setSettingsData({ ...settingsData, workHoursStart: e.target.value })}
                         className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
                       />
                       <span>to</span>
                       <input
                         type="text"
-                        value={settingsData.workHoursEnd}
+                        value={settingsData.workHoursEnd || '18:00'}
                         onChange={(e) => setSettingsData({ ...settingsData, workHoursEnd: e.target.value })}
                         className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
                       />
                     </div>
                   </div>
                   <div>
+                    <label className="font-semibold block mb-1">Grace Period (Minutes)</label>
+                    <input
+                      type="number"
+                      value={settingsData.gracePeriodMinutes || 15}
+                      onChange={(e) => setSettingsData({ ...settingsData, gracePeriodMinutes: Number(e.target.value) })}
+                      className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08]"
+                    />
+                  </div>
+                  <div>
                     <label className="font-semibold block mb-1">Productivity Factor (%)</label>
                     <input
                       type="number"
-                      value={settingsData.productivityFactor}
+                      value={settingsData.productivityFactor || 90}
                       onChange={(e) => setSettingsData({ ...settingsData, productivityFactor: Number(e.target.value) })}
                       className="w-full p-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] font-bold text-indigo-400"
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Attendance Policy & Automation Controls */}
+              <div className="modern-card p-6 space-y-6">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/[0.06]">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-500" />
+                    <div>
+                      <h3 className="font-bold text-sm">Attendance & Shift Policy Controls</h3>
+                      <p className="text-[11px] text-slate-400">Configure organization-level check-in/out requirements, optional tracking, and automated shift recording.</p>
+                    </div>
+                  </div>
+                  <span className={`pill-badge text-xs ${settingsData.attendanceTrackingEnabled !== false ? 'bg-emerald-500/15 text-emerald-500' : 'bg-slate-500/15 text-slate-400'}`}>
+                    {settingsData.attendanceTrackingEnabled !== false ? (settingsData.attendanceMandatory ? 'Mandatory Policy' : 'Flexible Policy') : 'Tracking Off'}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Master Attendance Tracking Toggle */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/[0.05]">
+                    <div>
+                      <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <span>Attendance Tracking Status</span>
+                        {settingsData.attendanceTrackingEnabled !== false ? (
+                          <span className="pill-badge bg-emerald-500/15 text-emerald-500 text-[10px]">Active</span>
+                        ) : (
+                          <span className="pill-badge bg-rose-500/15 text-rose-500 text-[10px]">Disabled</span>
+                        )}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Enable or disable check-in and check-out tracking for the entire organization.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={settingsData.attendanceTrackingEnabled !== false}
+                        onChange={(e) => setSettingsData({ ...settingsData, attendanceTrackingEnabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Mandatory vs Flexible / Optional Control */}
+                  <div className={`p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/[0.05] transition-opacity ${settingsData.attendanceTrackingEnabled === false ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                      <div>
+                        <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                          Check-in Requirement (Mandatory vs Flexible)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Check-in and check-out is not mandatory by default. You can enforce mandatory clock-in or allow flexible self-managed attendance.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSettingsData({ ...settingsData, attendanceMandatory: false })}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          !settingsData.attendanceMandatory
+                            ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-500/10 text-indigo-900 dark:text-indigo-200 shadow-sm'
+                            : 'border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/[0.15]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-xs">Flexible / Optional Check-in</span>
+                          {!settingsData.attendanceMandatory && <CheckCircle2 className="w-4 h-4 text-indigo-500" />}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          Attendance clock-in is optional. No penalties or missed-clock-in alerts for flexible work hours.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSettingsData({ ...settingsData, attendanceMandatory: true })}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          settingsData.attendanceMandatory
+                            ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-500/10 text-amber-900 dark:text-amber-200 shadow-sm'
+                            : 'border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/[0.15]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-xs">Mandatory Daily Clock-in</span>
+                          {settingsData.attendanceMandatory && <CheckCircle2 className="w-4 h-4 text-amber-500" />}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          Strict policy: all scheduled employees are required to record check-in/out for shift accounting.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Automatic Check-In & Check-Out */}
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/[0.05] transition-opacity ${settingsData.attendanceTrackingEnabled === false ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div>
+                      <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <span>Automatic Check-In & Check-Out</span>
+                        {settingsData.autoCheckInOutEnabled && (
+                          <span className="pill-badge bg-indigo-500/15 text-indigo-400 text-[10px]">Automated</span>
+                        )}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Automatically record daily shifts for staff during scheduled working hours ({settingsData.workHoursStart || '09:00'} – {settingsData.workHoursEnd || '18:00'}).
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settingsData.autoCheckInOutEnabled)}
+                        onChange={(e) => setSettingsData({ ...settingsData, autoCheckInOutEnabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Exclude Planned Leave Days */}
+                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/[0.05] transition-opacity ${(settingsData.attendanceTrackingEnabled === false || !settingsData.autoCheckInOutEnabled) ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div>
+                      <h4 className="font-semibold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <span>Exclude Planned Leave Days & Holidays</span>
+                        <span className="pill-badge bg-emerald-500/15 text-emerald-500 text-[10px]">Leave Protected</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Prevent auto check-in/out on approved leave dates and public holidays so employees remain accurately marked as &quot;On leave&quot;.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={settingsData.autoCheckInOutExcludeLeaves !== false}
+                        onChange={(e) => setSettingsData({ ...settingsData, autoCheckInOutExcludeLeaves: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>
+                    </label>
                   </div>
                 </div>
               </div>

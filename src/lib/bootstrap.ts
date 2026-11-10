@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { processAutoAttendance } from '@/lib/auto-attendance';
 import {
   calculateDepartmentKpi,
   calculateTicketDeduction,
@@ -113,6 +114,15 @@ export async function getBootstrapData({
   const teamFilter: any = { organizationId };
   if (role === 'member' && organization?.membership?.teamId) {
     teamFilter.teamId = organization.membership.teamId;
+  }
+
+  // Auto-record shift attendance for scheduled staff when policy enabled
+  if (org?.autoCheckInOutEnabled) {
+    await processAutoAttendance({
+      organizationId,
+      workDate,
+      orgSettings: org,
+    });
   }
 
   // Optimized parallel server queries with pruned field selections and bounded limits
@@ -380,6 +390,12 @@ export async function getBootstrapData({
     status: activeSession ? 'Present' : totalMinutes > 0 ? 'Checked Out' : 'Not checked in',
     activeSession: activeSession || null,
     teamAttendance,
+    policy: {
+      attendanceTrackingEnabled: org?.attendanceTrackingEnabled ?? true,
+      attendanceMandatory: org?.attendanceMandatory ?? false,
+      autoCheckInOutEnabled: org?.autoCheckInOutEnabled ?? false,
+      autoCheckInOutExcludeLeaves: org?.autoCheckInOutExcludeLeaves ?? true,
+    },
   };
 
   // Format Corrections
