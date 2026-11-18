@@ -64,6 +64,7 @@ model Organization {
   kpiAggregationMethod   String   @default("weighted") // weighted or equal
   subscriptionTier       String   @default("Business") // Starter, Business, Enterprise, Trial
   subscriptionStatus     String   @default("Active") // Active, Suspended, Trial
+  zohoDesignerField      String?  @default("UDF_MULTIPKL10") // Configurable Zoho custom field for Designer
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -98,6 +99,8 @@ model OrganizationMembership {
   employmentStatus       String   @default("Active") // Active, Onboarding, Inactive
   joiningDate            String   // YYYY-MM-DD
   capacityFactorOverride Float?
+  experienceLevel        String?  @default("Mid") // Junior, Mid, Senior
+  zohoDesignerName       String?  // Mapped Zoho Sprints Designer name / picklist value
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -246,6 +249,8 @@ model Ticket {
   createdByMembershipId String?
   teamId                String?
   reassignmentCount     Int      @default(0)
+  customFields          Json?    // Stored custom layout fields from Zoho Sprints (UDF_*, human readable names, options)
+  rawPayload            Json?    // Complete raw Zoho Sprints payload
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

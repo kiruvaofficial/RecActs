@@ -61,9 +61,12 @@ export const PERMISSIONS: Record<string, FunctionalRole[]> = {
   'reports:export': ['lead', 'manager', 'hr', 'owner'],
   'reports:eod_resend': ['lead', 'manager', 'hr', 'owner'],
 
-  // Administration & Audit
+  // Administration, Users & Team Management
   'org:manage_settings': ['owner'],
-  'org:manage_employees': ['hr', 'owner'],
+  'org:manage_employees': ['lead', 'manager', 'hr', 'owner'],
+  'users:view': ['lead', 'manager', 'hr', 'owner'],
+  'users:manage': ['lead', 'manager', 'hr', 'owner'],
+  'users:map_designer': ['lead', 'manager', 'hr', 'owner'],
   'audit:view': ['manager', 'hr', 'owner', 'god'],
   'platform:api_docs': ['owner', 'god'],
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import {
   LayoutDashboard,
@@ -34,8 +34,14 @@ import {
   Download,
   Users,
   Building,
+  Building2,
+  Palette,
   Lock,
   Sparkles,
+  Star,
+  CheckSquare,
+  MessageSquare,
+  Layers,
   Kanban,
   Table as TableIcon,
   Flame,
@@ -66,6 +72,8 @@ import {
   LeaveSkeleton,
   GenericTabSkeleton,
 } from '@/components/Skeletons';
+import { ZohoIntegrationView } from '@/components/zoho/ZohoIntegrationView';
+import { UserManagementView } from '@/components/users/UserManagementView';
 
 export default function RecActsFullyFunctionalApp() {
   // Navigation & Role State
@@ -155,6 +163,42 @@ export default function RecActsFullyFunctionalApp() {
   const [filterTeam, setFilterTeam] = useState<string>('All');
   const [ganttZoom, setGanttZoom] = useState<'day' | 'week' | 'month'>('week');
 
+  // Zoho Sprints Integration State
+  const [isSyncingZoho, setIsSyncingZoho] = useState<boolean>(false);
+  const [zohoTokenInput, setZohoTokenInput] = useState<string>('');
+  const [zohoRegionInput, setZohoRegionInput] = useState<'us' | 'in' | 'eu' | 'au'>('us');
+  const [zohoPortalInput, setZohoPortalInput] = useState<string>('730202335');
+  const [zohoClientIdInput, setZohoClientIdInput] = useState<string>('');
+  const [zohoClientSecretInput, setZohoClientSecretInput] = useState<string>('');
+  const [zohoErrorMessage, setZohoErrorMessage] = useState<string | null>(null);
+  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState<boolean>(false);
+  const [availableZohoProjects, setAvailableZohoProjects] = useState<any[]>([]);
+  const [selectedZohoProjectIds, setSelectedZohoProjectIds] = useState<string[]>([
+    '101301000000105539',
+    '101301000007065415',
+    '101301000006534930',
+  ]);
+  const [zohoProjectSearch, setZohoProjectSearch] = useState<string>('');
+  const [isSavingZohoProjects, setIsSavingZohoProjects] = useState<boolean>(false);
+  const [customZohoProjId, setCustomZohoProjId] = useState<string>('');
+  const [customZohoProjName, setCustomZohoProjName] = useState<string>('');
+  const [hasZohoAuthConnected, setHasZohoAuthConnected] = useState<boolean>(false);
+  const [discoveredZohoFields, setDiscoveredZohoFields] = useState<any[]>([]);
+  const [zohoCustomFieldsSchema, setZohoCustomFieldsSchema] = useState<any[]>([]);
+  const [zohoRawItemReferences, setZohoRawItemReferences] = useState<string[]>([]);
+  const [selectedRawTicketRef, setSelectedRawTicketRef] = useState<string>('');
+  const [selectedRawPayload, setSelectedRawPayload] = useState<any>(null);
+  const [zohoSchedule, setZohoSchedule] = useState<any>({
+    autoSyncEnabled: true,
+    intervalMinutes: 30,
+    lastSyncTime: null,
+    nextSyncTime: null,
+    lastSyncStatus: null,
+    lastSyncedCount: 0,
+  });
+  const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
+  const [schemaFieldFilter, setSchemaFieldFilter] = useState<string>('');
+
   // Month & Period Filtering
   const MONTH_OPTIONS = [
     { value: '2026-10', label: 'October 2026' },
@@ -164,6 +208,313 @@ export default function RecActsFullyFunctionalApp() {
   ];
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
   const [ticketMonthFilter, setTicketMonthFilter] = useState<string>('all');
+  const [ticketDeptFilter, setTicketDeptFilter] = useState<string>('all');
+  const [ticketDesignerFilter, setTicketDesignerFilter] = useState<string>('all');
+  const [ticketSearchQuery, setTicketSearchQuery] = useState<string>('');
+  const [kanbanGroupBy, setKanbanGroupBy] = useState<'stages' | 'core' | 'department'>('stages');
+  const [kanbanCardDensity, setKanbanCardDensity] = useState<'detail' | 'compact'>('detail');
+  const [kanbanCollapsedColumns, setKanbanCollapsedColumns] = useState<Record<string, boolean>>({});
+
+  const availableTicketDepartments = useMemo(() => {
+    const set = new Set<string>();
+    const excludedInternalTeams = new Set(['Alpha', 'Beta', 'alpha', 'beta']);
+    tickets.forEach((t: any) => {
+      const d = typeof t.department === 'string' ? t.department.trim() : '';
+      if (d && !excludedInternalTeams.has(d)) {
+        set.add(d);
+      }
+    });
+    return Array.from(set).sort();
+  }, [tickets]);
+
+  const availableTicketDesigners = useMemo(() => {
+    const set = new Set<string>();
+    tickets.forEach((t: any) => {
+      if (t.designer && typeof t.designer === 'string' && t.designer.trim()) {
+        set.add(t.designer.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [tickets]);
+
+  const visibleFilteredTickets = useMemo(() => {
+    return tickets.filter((t: any) => {
+      // 1. Month filter (Requirement Start / End Date or planned dates)
+      if (ticketMonthFilter !== 'all') {
+        const inDue = t.plannedDue?.startsWith(ticketMonthFilter);
+        const inStart = t.plannedStart?.startsWith(ticketMonthFilter);
+        const inComp = t.completedDate?.startsWith(ticketMonthFilter);
+        const inReqStart = t.requirementStartDate?.startsWith(ticketMonthFilter);
+        const inReqDue = t.requirementEndDate?.startsWith(ticketMonthFilter);
+        const matchesMonth = inDue || inStart || inComp || inReqStart || inReqDue;
+        if (!matchesMonth) return false;
+      }
+
+      // 2. Department filter (UDF_PKL20)
+      if (ticketDeptFilter !== 'all') {
+        if (t.department !== ticketDeptFilter) return false;
+      }
+
+      // 3. Designer filter (UDF_MULTIPKL10)
+      if (ticketDesignerFilter !== 'all') {
+        if (ticketDesignerFilter === 'unassigned') {
+          if (t.designer && t.designer.trim()) return false;
+        } else {
+          if (!t.designer || !t.designer.toLowerCase().includes(ticketDesignerFilter.toLowerCase())) return false;
+        }
+      }
+
+      // 4. Text search query
+      if (ticketSearchQuery.trim()) {
+        const q = ticketSearchQuery.toLowerCase().trim();
+        const matchRef = t.ref?.toLowerCase().includes(q);
+        const matchTitle = t.title?.toLowerCase().includes(q);
+        const matchCust = t.customer?.toLowerCase().includes(q);
+        const matchDes = t.designer?.toLowerCase().includes(q);
+        const matchDept = t.department?.toLowerCase().includes(q);
+        if (!matchRef && !matchTitle && !matchCust && !matchDes && !matchDept) return false;
+      }
+
+      return true;
+    });
+  }, [tickets, ticketMonthFilter, ticketDeptFilter, ticketDesignerFilter, ticketSearchQuery]);
+
+  // Dynamically discover all distinct Zoho statuses present across tickets
+  const availableDynamicStatuses = useMemo(() => {
+    const statusSet = new Set<string>();
+    tickets.forEach((t: any) => {
+      const s = (t.rawStatusName || (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status);
+      if (s && typeof s === 'string' && s.trim()) {
+        statusSet.add(s.trim());
+      }
+    });
+
+    // Lifecycle progression rank for standard Zoho Sprints agile workflow
+    const LIFECYCLE_RANK: Record<string, number> = {
+      'req to do': 10,
+      'to do': 11,
+      'new': 12,
+      'backlog': 13,
+      'open': 14,
+      'req in progress': 20,
+      'analysis': 21,
+      'requirement analysis': 22,
+      'req documentation': 30,
+      'documentation': 31,
+      'test case scenario': 40,
+      'mobile test case scenario': 41,
+      'req handoff': 50,
+      'waiting review': 51,
+      'under review': 52,
+      'dev feature to do': 60,
+      'dev feature in progress': 61,
+      'dev feature in-progress': 62,
+      'in development': 63,
+      'development': 64,
+      'in progress': 65,
+      'testing feature to do': 70,
+      'testing feature in progress': 71,
+      'testing bugs in progress': 72,
+      'need to duplicate bugs': 73,
+      'testing in progress': 74,
+      'testing': 75,
+      'qa': 76,
+      'ready to move live': 80,
+      'ready for deploy': 81,
+      'live': 82,
+      'completed': 90,
+      'done': 91,
+      'closed': 92,
+    };
+
+    const list = Array.from(statusSet);
+    if (list.length === 0) {
+      return ['Req to do', 'Req In progress', 'Req Documentation', 'Test Case scenario', 'Req Handoff', 'Dev Feature In progress', 'Testing in progress', 'Completed'];
+    }
+
+    return list.sort((a, b) => {
+      const rankA = LIFECYCLE_RANK[a.toLowerCase()] ?? 55;
+      const rankB = LIFECYCLE_RANK[b.toLowerCase()] ?? 55;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.localeCompare(b);
+    });
+  }, [tickets]);
+
+  // Dynamic Theme Resolver for Any Discovered Zoho Status
+  const getStatusTheme = (statusName: string, idx: number) => {
+    const lower = statusName.toLowerCase();
+    if (lower.includes('req to do') || lower === 'to do' || lower === 'new' || lower === 'open' || lower === 'backlog') {
+      return { starColor: 'text-emerald-400', topBarColor: 'bg-emerald-500', accentBorder: 'border-l-emerald-500', badgeBg: 'bg-emerald-500/15 text-emerald-400' };
+    }
+    if (lower.includes('req in prog') || lower === 'req in progress' || lower.includes('analysis')) {
+      return { starColor: 'text-amber-400', topBarColor: 'bg-amber-500', accentBorder: 'border-l-amber-500', badgeBg: 'bg-amber-500/15 text-amber-400' };
+    }
+    if (lower.includes('doc')) {
+      return { starColor: 'text-purple-400', topBarColor: 'bg-purple-500', accentBorder: 'border-l-purple-500', badgeBg: 'bg-purple-500/15 text-purple-400' };
+    }
+    if (lower.includes('test case') || lower.includes('scenario')) {
+      return { starColor: 'text-cyan-400', topBarColor: 'bg-cyan-500', accentBorder: 'border-l-cyan-500', badgeBg: 'bg-cyan-500/15 text-cyan-400' };
+    }
+    if (lower.includes('handoff') || lower.includes('review')) {
+      return { starColor: 'text-blue-400', topBarColor: 'bg-blue-500', accentBorder: 'border-l-blue-500', badgeBg: 'bg-blue-500/15 text-blue-400' };
+    }
+    if (lower.includes('dev')) {
+      return { starColor: 'text-indigo-400', topBarColor: 'bg-indigo-500', accentBorder: 'border-l-indigo-500', badgeBg: 'bg-indigo-500/15 text-indigo-400' };
+    }
+    if (lower.includes('bug') || lower.includes('duplicate')) {
+      return { starColor: 'text-rose-400', topBarColor: 'bg-rose-500', accentBorder: 'border-l-rose-500', badgeBg: 'bg-rose-500/15 text-rose-400' };
+    }
+    if (lower.includes('testing') || lower.includes('qa')) {
+      return { starColor: 'text-teal-400', topBarColor: 'bg-teal-500', accentBorder: 'border-l-teal-500', badgeBg: 'bg-teal-500/15 text-teal-400' };
+    }
+    if (lower.includes('ready') || lower.includes('live')) {
+      return { starColor: 'text-orange-400', topBarColor: 'bg-orange-500', accentBorder: 'border-l-orange-500', badgeBg: 'bg-orange-500/15 text-orange-400' };
+    }
+    if (lower.includes('completed') || lower.includes('done') || lower.includes('closed')) {
+      return { starColor: 'text-green-400', topBarColor: 'bg-green-500', accentBorder: 'border-l-green-500', badgeBg: 'bg-green-500/15 text-green-400' };
+    }
+    const cycling = [
+      { starColor: 'text-sky-400', topBarColor: 'bg-sky-500', accentBorder: 'border-l-sky-500', badgeBg: 'bg-sky-500/15 text-sky-400' },
+      { starColor: 'text-violet-400', topBarColor: 'bg-violet-500', accentBorder: 'border-l-violet-500', badgeBg: 'bg-violet-500/15 text-violet-400' },
+      { starColor: 'text-fuchsia-400', topBarColor: 'bg-fuchsia-500', accentBorder: 'border-l-fuchsia-500', badgeBg: 'bg-fuchsia-500/15 text-fuchsia-400' },
+      { starColor: 'text-lime-400', topBarColor: 'bg-lime-500', accentBorder: 'border-l-lime-500', badgeBg: 'bg-lime-500/15 text-lime-400' },
+    ];
+    return cycling[idx % cycling.length];
+  };
+
+  // Zoho Sprints Dynamic Kanban Workflow Columns
+  const kanbanColumns = useMemo(() => {
+    if (kanbanGroupBy === 'core') {
+      return [
+        {
+          id: 'To Do',
+          title: 'To Do',
+          starColor: 'text-emerald-400',
+          topBarColor: 'bg-emerald-500',
+          accentBorder: 'border-l-emerald-500',
+          badgeBg: 'bg-emerald-500/15 text-emerald-400',
+          filter: (t: any) => t.status === 'To Do',
+        },
+        {
+          id: 'In Progress',
+          title: 'In Progress',
+          starColor: 'text-amber-400',
+          topBarColor: 'bg-amber-500',
+          accentBorder: 'border-l-amber-500',
+          badgeBg: 'bg-amber-500/15 text-amber-400',
+          filter: (t: any) => t.status === 'In Progress',
+        },
+        {
+          id: 'Under Review',
+          title: 'Under Review',
+          starColor: 'text-blue-400',
+          topBarColor: 'bg-blue-500',
+          accentBorder: 'border-l-blue-500',
+          badgeBg: 'bg-blue-500/15 text-blue-400',
+          filter: (t: any) => t.status === 'Under Review',
+        },
+        {
+          id: 'Completed',
+          title: 'Completed',
+          starColor: 'text-green-400',
+          topBarColor: 'bg-green-500',
+          accentBorder: 'border-l-green-500',
+          badgeBg: 'bg-green-500/15 text-green-400',
+          filter: (t: any) => t.status === 'Completed',
+        },
+      ];
+    }
+
+    if (kanbanGroupBy === 'department') {
+      const depts = availableTicketDepartments.length > 0 ? availableTicketDepartments : ['Requirement', 'Development', 'Testing'];
+      const colorPalettes = [
+        { star: 'text-indigo-400', top: 'bg-indigo-500', border: 'border-l-indigo-500', badge: 'bg-indigo-500/15 text-indigo-400' },
+        { star: 'text-purple-400', top: 'bg-purple-500', border: 'border-l-purple-500', badge: 'bg-purple-500/15 text-purple-400' },
+        { star: 'text-teal-400', top: 'bg-teal-500', border: 'border-l-teal-500', badge: 'bg-teal-500/15 text-teal-400' },
+        { star: 'text-amber-400', top: 'bg-amber-500', border: 'border-l-amber-500', badge: 'bg-amber-500/15 text-amber-400' },
+        { star: 'text-cyan-400', top: 'bg-cyan-500', border: 'border-l-cyan-500', badge: 'bg-cyan-500/15 text-cyan-400' },
+      ];
+      return [
+        ...depts.map((d, idx) => {
+          const c = colorPalettes[idx % colorPalettes.length];
+          return {
+            id: d,
+            title: d,
+            starColor: c.star,
+            topBarColor: c.top,
+            accentBorder: c.border,
+            badgeBg: c.badge,
+            filter: (t: any) => t.department === d,
+          };
+        }),
+        {
+          id: 'unassigned',
+          title: 'Unassigned Dept',
+          starColor: 'text-slate-400',
+          topBarColor: 'bg-slate-500',
+          accentBorder: 'border-l-slate-500',
+          badgeBg: 'bg-slate-500/15 text-slate-400',
+          filter: (t: any) => !t.department,
+        },
+      ];
+    }
+
+    // Default: 'stages' - Dynamically Loaded Zoho Sprints Status Columns
+    const dynamicCols = availableDynamicStatuses.map((st, idx) => {
+      const theme = getStatusTheme(st, idx);
+      return {
+        id: st,
+        title: st,
+        starColor: theme.starColor,
+        topBarColor: theme.topBarColor,
+        accentBorder: theme.accentBorder,
+        badgeBg: theme.badgeBg,
+        filter: (t: any) => {
+          const s = (t.rawStatusName || (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status)?.trim();
+          return s?.toLowerCase() === st.toLowerCase();
+        },
+      };
+    });
+
+    // Handle any unclassified tickets that don't match any discovered status
+    const hasUnclassified = visibleFilteredTickets.some((t: any) => {
+      const s = (t.rawStatusName || (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status)?.trim()?.toLowerCase();
+      return !availableDynamicStatuses.some((st) => st.toLowerCase() === s);
+    });
+
+    if (hasUnclassified) {
+      dynamicCols.push({
+        id: 'unclassified',
+        title: 'Other / Unclassified',
+        starColor: 'text-slate-400',
+        topBarColor: 'bg-slate-500',
+        accentBorder: 'border-l-slate-500',
+        badgeBg: 'bg-slate-500/15 text-slate-400',
+        filter: (t: any) => {
+          const s = (t.rawStatusName || (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status)?.trim()?.toLowerCase();
+          return !availableDynamicStatuses.some((st) => st.toLowerCase() === s);
+        },
+      });
+    }
+
+    return dynamicCols;
+  }, [kanbanGroupBy, availableTicketDepartments, availableDynamicStatuses, visibleFilteredTickets]);
+
+  const totalSprintMetrics = useMemo(() => {
+    let pts = 0;
+    let hrs = 0;
+    visibleFilteredTickets.forEach((t: any) => {
+      const rawPts = t.points !== undefined && t.points !== null
+        ? Number(t.points)
+        : (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null
+        ? Number((t.rawPayload as any).points)
+        : null;
+      const tPts = rawPts !== null && !isNaN(rawPts) ? rawPts : 0;
+      pts += tPts;
+      hrs += Number(t.totalWeightage) || 0;
+    });
+    return { pts, hrs };
+  }, [visibleFilteredTickets]);
   const [reportMonthFilter, setReportMonthFilter] = useState<string>('all');
 
   const handleMonthChange = async (month: string) => {
@@ -461,8 +812,202 @@ export default function RecActsFullyFunctionalApp() {
       }
     } catch {}
 
+    // Check for Zoho OAuth callback params
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('zoho_success')) {
+        const synced = params.get('synced');
+        showToast(`Zoho OAuth connected! Successfully synced ${synced || 'live'} tickets.`);
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (params.get('zoho_error')) {
+        const err = params.get('zoho_error');
+        setZohoErrorMessage(`Zoho OAuth authorization error: ${err}`);
+        setActiveTab('zoho');
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+
     loadAllData();
   }, []);
+
+  // Zoho Sprints Integration & Scheduled Sync Handlers
+  const loadZohoProjectsConfig = async () => {
+    try {
+      const res = await fetch('/api/tickets/zoho-projects');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.projects)) setAvailableZohoProjects(data.projects);
+        if (Array.isArray(data.selectedProjectIds)) setSelectedZohoProjectIds(data.selectedProjectIds);
+        if (typeof data.isConnected === 'boolean') setHasZohoAuthConnected(data.isConnected);
+      }
+    } catch (e) {
+      console.warn('Failed loading Zoho project configuration:', e);
+    }
+  };
+
+  const loadZohoSchemaAndSchedule = async (targetRef?: string) => {
+    try {
+      const q = targetRef ? `?ref=${encodeURIComponent(targetRef)}` : '';
+      const res = await fetch(`/api/tickets/zoho-schema${q}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.fields)) setDiscoveredZohoFields(data.fields);
+        if (Array.isArray(data.customFieldsSchema)) setZohoCustomFieldsSchema(data.customFieldsSchema);
+        if (Array.isArray(data.references)) setZohoRawItemReferences(data.references);
+        if (data.selectedRef) setSelectedRawTicketRef(data.selectedRef);
+        if (data.samplePayload) setSelectedRawPayload(data.samplePayload);
+        if (data.schedule) setZohoSchedule(data.schedule);
+      }
+    } catch (e) {
+      console.warn('Failed loading Zoho schema:', e);
+    }
+  };
+
+  const handleSaveZohoProjects = async (idsToSave?: string[]) => {
+    const ids = idsToSave || selectedZohoProjectIds;
+    setIsSavingZohoProjects(true);
+    try {
+      const res = await fetch('/api/tickets/zoho-projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedProjectIds: ids }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Saved ${ids.length} projects for Zoho sync!`);
+      } else {
+        showToast(data.error || 'Failed saving project selection');
+      }
+    } catch (e) {
+      showToast('Error saving project selection');
+    } finally {
+      setIsSavingZohoProjects(false);
+    }
+  };
+
+  const toggleZohoProject = (pId: string) => {
+    const updated = selectedZohoProjectIds.includes(pId)
+      ? selectedZohoProjectIds.filter((id) => id !== pId)
+      : [...selectedZohoProjectIds, pId];
+    setSelectedZohoProjectIds(updated);
+  };
+
+  const handleSelectAllZohoProjects = () => {
+    const all = availableZohoProjects.map((p) => p.id);
+    setSelectedZohoProjectIds(all);
+  };
+
+  const handleDeselectAllZohoProjects = () => {
+    setSelectedZohoProjectIds([]);
+  };
+
+  const handleSelectDefaultZohoProjects = () => {
+    setSelectedZohoProjectIds([
+      '101301000000105539', // Requirements in progress
+      '101301000007065415', // AI Agentic team
+      '101301000006534930', // Fabritec LLC
+    ]);
+  };
+
+  const handleAddCustomZohoProject = () => {
+    if (!customZohoProjId.trim()) return;
+    const cleanId = customZohoProjId.trim();
+    const cleanName = customZohoProjName.trim() || `Project ${cleanId}`;
+    if (!availableZohoProjects.some((p) => p.id === cleanId)) {
+      setAvailableZohoProjects((prev) => [{ id: cleanId, name: cleanName, status: 'Custom' }, ...prev]);
+    }
+    if (!selectedZohoProjectIds.includes(cleanId)) {
+      setSelectedZohoProjectIds((prev) => [...prev, cleanId]);
+    }
+    setCustomZohoProjId('');
+    setCustomZohoProjName('');
+    showToast(`Added "${cleanName}" to selected projects`);
+  };
+
+  const handleSaveZohoSchedule = async () => {
+    setIsSavingSchedule(true);
+    try {
+      const res = await fetch('/api/tickets/zoho-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autoSyncEnabled: zohoSchedule?.autoSyncEnabled,
+          intervalMinutes: Number(zohoSchedule?.intervalMinutes) || 30,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.schedule) setZohoSchedule(data.schedule);
+        showToast(data.message || 'Saved recurring sync schedule!');
+      } else {
+        showToast(data.error || 'Failed saving schedule');
+      }
+    } catch (e) {
+      showToast('Error saving sync schedule');
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
+
+  const handleSyncZoho = async (customTokenParam?: string | boolean) => {
+    setIsSyncingZoho(true);
+    setZohoErrorMessage(null);
+    const tokenToUse = typeof customTokenParam === 'string' ? customTokenParam : zohoTokenInput || undefined;
+    try {
+      const res = await fetch('/api/tickets/sync-zoho', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customToken: tokenToUse,
+          region: zohoRegionInput,
+          portalId: zohoPortalInput,
+          clientId: zohoClientIdInput || undefined,
+          clientSecret: zohoClientSecretInput || undefined,
+          selectedProjectIds: selectedZohoProjectIds,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.message || `Synced ${data.totalSynced} tickets from Zoho Sprints!`);
+        setZohoErrorMessage(null);
+        await loadAllData();
+        await loadZohoSchemaAndSchedule();
+      } else {
+        const errMsg = data.error || data.details || 'Zoho credentials needed. Please enter token.';
+        setZohoErrorMessage(errMsg);
+        showToast(errMsg);
+      }
+    } catch (err: any) {
+      const errMsg = `Sync error: ${err?.message || String(err)}`;
+      setZohoErrorMessage(errMsg);
+      showToast(errMsg);
+    } finally {
+      setIsSyncingZoho(false);
+    }
+  };
+
+  // Tab switch hook for Zoho
+  useEffect(() => {
+    if (activeTab === 'zoho') {
+      loadZohoProjectsConfig();
+      loadZohoSchemaAndSchedule();
+    }
+  }, [activeTab]);
+
+  // Periodic heartbeat for auto-sync execution (every 60s)
+  useEffect(() => {
+    if (!zohoSchedule?.autoSyncEnabled || !zohoSchedule?.nextSyncTime) return;
+    const intervalTimer = setInterval(() => {
+      if (zohoSchedule?.autoSyncEnabled && zohoSchedule?.nextSyncTime && !isSyncingZoho) {
+        const nextTime = new Date(zohoSchedule.nextSyncTime).getTime();
+        if (Date.now() >= nextTime) {
+          console.log('[RecActs Auto-Sync] Interval elapsed, triggering automatic Zoho sync...');
+          handleSyncZoho(false);
+        }
+      }
+    }, 60_000);
+    return () => clearInterval(intervalTimer);
+  }, [zohoSchedule, isSyncingZoho]);
 
   // Attendance Check-in / Out Actions
   const handleCheckIn = async () => {
@@ -1050,6 +1595,7 @@ export default function RecActsFullyFunctionalApp() {
                   renderNavItem('blockers', 'Blocker Board', <AlertOctagon className="w-3.5 h-3.5" />, blockers.filter(b => b.status === 'Raised').length, true)}
                 {(hasPermission(role as FunctionalRole, 'leave:apply') || hasPermission(role as FunctionalRole, 'leave:view_calendar')) &&
                   renderNavItem('leave', 'Leave Planner', <Calendar className="w-3.5 h-3.5" />)}
+                {renderNavItem('zoho', 'Zoho Sprints Sync', <Sparkles className="w-3.5 h-3.5 text-indigo-400" />)}
               </div>
             </div>
           )}
@@ -1071,6 +1617,10 @@ export default function RecActsFullyFunctionalApp() {
                   renderNavItem('reports', 'Reports & EOD', <BarChart3 className="w-3.5 h-3.5" />)}
                 {hasPermission(role as FunctionalRole, 'audit:view') &&
                   renderNavItem('audit', 'Audit History', <History className="w-3.5 h-3.5" />)}
+                {(hasPermission(role as FunctionalRole, 'users:view') ||
+                  hasPermission(role as FunctionalRole, 'org:manage_employees') ||
+                  ['lead', 'manager', 'hr', 'owner', 'god'].includes(role)) &&
+                  renderNavItem('users', 'Team & Users', <Users className="w-3.5 h-3.5 text-pink-400" />)}
                 {hasPermission(role as FunctionalRole, 'platform:api_docs') &&
                   renderNavItem('api-docs', 'REST API Explorer', <ExternalLink className="w-3.5 h-3.5" />)}
                 {hasPermission(role as FunctionalRole, 'org:manage_settings') &&
@@ -1085,7 +1635,7 @@ export default function RecActsFullyFunctionalApp() {
         </aside>
 
         {/* MAIN VIEW */}
-        <main className="flex-1 p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+        <main className={`flex-1 min-w-0 space-y-6 ${activeTab === 'tickets' || activeTab === 'timeline' ? 'p-4 lg:p-6 w-full max-w-none' : 'p-6 lg:p-8 max-w-7xl mx-auto'}`}>
           {/* ========================================================================= */}
           {/* 1. VIEW: DASHBOARD OVERVIEW */}
           {/* ========================================================================= */}
@@ -1109,7 +1659,7 @@ export default function RecActsFullyFunctionalApp() {
               ? kpiIndividual.achievementPercent * 100
               : (kpiTarget > 0 ? (kpiAchieved / kpiTarget) * 100 : 0);
             const kpiPercentStr = kpiIndividual?.achievementDisplay || `${kpiPercentNum.toFixed(1)}%`;
-            const kpiRating = kpiIndividual?.rating || (kpiPercentNum >= 120 ? 'Excellent' : kpiPercentNum >= 95 ? 'Good' : kpiPercentNum >= 75 ? 'Average' : 'Needs Improvement');
+            const kpiRating = kpiIndividual?.rating || (kpiPercentNum >= 100 ? 'Excellent' : kpiPercentNum >= 80 ? 'Good' : kpiPercentNum >= 60 ? 'Average' : 'Needs Improvement');
             const kpiMonth = kpiData?.settings?.month || 'October 2026';
 
             const ratingBadgeClass =
@@ -1918,23 +2468,82 @@ export default function RecActsFullyFunctionalApp() {
             ) : !hasPermission(role as FunctionalRole, 'tickets:view') ? (
               renderAccessRestricted('Tickets Restricted', 'Requirement ticket views are restricted to delivery teams and leadership.')
             ) : (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Requirement Tickets & Allocations</h1>
-                  <p className="text-xs text-slate-500">
-                    Shared ticket weightages with independent individual allocations preventing double counting.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {/* Tickets Month Filter */}
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+            <div className="w-full space-y-3 animate-in fade-in duration-200">
+              {/* Top Filter & Actions Toolbar */}
+              <div className="w-full flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+                  {/* Search Query Filter */}
+                  <div className="relative min-w-[180px] sm:min-w-[220px]">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search tickets, designer, client..."
+                      value={ticketSearchQuery}
+                      onChange={(e) => setTicketSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08] text-xs outline-none placeholder-slate-400 text-slate-900 dark:text-white font-medium"
+                    />
+                    {ticketSearchQuery && (
+                      <button
+                        onClick={() => setTicketSearchQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-0.5"
+                        title="Clear search"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Department Filter (UDF_PKL20) */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Building2 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">Dept:</span>
+                    <select
+                      value={ticketDeptFilter}
+                      onChange={(e) => setTicketDeptFilter(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer max-w-[120px] truncate"
+                    >
+                      <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        All Depts
+                      </option>
+                      {availableTicketDepartments.map((dept) => (
+                        <option key={dept} value={dept} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Designer Filter (UDF_MULTIPKL10) */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Palette className="w-3.5 h-3.5 text-pink-400 flex-shrink-0" />
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">Designer:</span>
+                    <select
+                      value={ticketDesignerFilter}
+                      onChange={(e) => setTicketDesignerFilter(e.target.value)}
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer max-w-[120px] truncate"
+                    >
+                      <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        All Designers
+                      </option>
+                      {availableTicketDesigners.map((des) => (
+                        <option key={des} value={des} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                          {des}
+                        </option>
+                      ))}
+                      <option value="unassigned" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                        Unassigned
+                      </option>
+                    </select>
+                  </div>
+
+                  {/* Requirement Dates & Month Filter (UDF_DATETIME10 / UDF_DATETIME6) */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
                     <span className="text-xs text-slate-400 font-medium hidden sm:inline">Month:</span>
                     <select
                       value={ticketMonthFilter}
                       onChange={(e) => setTicketMonthFilter(e.target.value)}
-                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                      className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer max-w-[130px] truncate"
                     >
                       <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                         All Months ({tickets.length})
@@ -1946,7 +2555,10 @@ export default function RecActsFullyFunctionalApp() {
                       ))}
                     </select>
                   </div>
+                </div>
 
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* View Mode Toggle */}
                   <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08]">
                     <button
                       onClick={() => setTicketViewMode('board')}
@@ -1964,6 +2576,26 @@ export default function RecActsFullyFunctionalApp() {
                     </button>
                   </div>
 
+                  {/* Sync Zoho Button */}
+                  <button
+                    onClick={() => handleSyncZoho(false)}
+                    disabled={isSyncingZoho}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm shadow-indigo-600/20 transition-all cursor-pointer"
+                    title="Sync tickets from Zoho Sprints"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingZoho ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">{isSyncingZoho ? 'Syncing...' : 'Sync Zoho'}</span>
+                  </button>
+
+                  {/* Zoho Config Shortcut */}
+                  <button
+                    onClick={() => setActiveTab('zoho')}
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08] text-slate-400 hover:text-white hover:border-slate-300 dark:hover:border-white/20 transition-colors"
+                    title="Zoho Sprints Integration Settings"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                  </button>
+
                   {hasPermission(role as FunctionalRole, 'tickets:create') && (
                     <button
                       onClick={() => {
@@ -1976,7 +2608,7 @@ export default function RecActsFullyFunctionalApp() {
                           priority: 'High',
                         });
                       }}
-                      className="btn-modern-primary px-3 py-2 text-xs flex items-center gap-1.5"
+                      className="btn-modern-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>New Requirement</span>
@@ -1985,39 +2617,436 @@ export default function RecActsFullyFunctionalApp() {
                 </div>
               </div>
 
-              {/* Kanban Columns */}
+              {/* Active Filter Indicators */}
+              {(ticketDeptFilter !== 'all' || ticketDesignerFilter !== 'all' || ticketSearchQuery || ticketMonthFilter !== 'all') && (
+                <div className="flex flex-wrap items-center gap-2 text-xs py-1 px-2 rounded-xl bg-slate-100/50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/[0.05]">
+                  <span className="text-slate-400 font-medium">
+                    Showing <strong className="text-indigo-400">{visibleFilteredTickets.length}</strong> of {tickets.length} tickets:
+                  </span>
+                  {ticketDeptFilter !== 'all' && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-500/15 text-indigo-300 flex items-center gap-1">
+                      <span>Dept: {ticketDeptFilter}</span>
+                      <button onClick={() => setTicketDeptFilter('all')} className="hover:text-white"><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  )}
+                  {ticketDesignerFilter !== 'all' && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-pink-500/15 text-pink-300 flex items-center gap-1">
+                      <span>Designer: {ticketDesignerFilter}</span>
+                      <button onClick={() => setTicketDesignerFilter('all')} className="hover:text-white"><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  )}
+                  {ticketMonthFilter !== 'all' && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-cyan-500/15 text-cyan-300 flex items-center gap-1">
+                      <span>Month: {ticketMonthFilter}</span>
+                      <button onClick={() => setTicketMonthFilter('all')} className="hover:text-white"><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  )}
+                  {ticketSearchQuery && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 flex items-center gap-1">
+                      <span>Query: &ldquo;{ticketSearchQuery}&rdquo;</span>
+                      <button onClick={() => setTicketSearchQuery('')} className="hover:text-white"><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setTicketDeptFilter('all');
+                      setTicketDesignerFilter('all');
+                      setTicketMonthFilter('all');
+                      setTicketSearchQuery('');
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-white underline ml-auto"
+                  >
+                    Reset all filters
+                  </button>
+                </div>
+              )}
+
+              {/* Zoho Sprints Authentic Kanban Workflow Board (Full Width + Dynamic Statuses) */}
               {ticketViewMode === 'board' ? (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {['To Do', 'In Progress', 'Under Review', 'Completed'].map((columnStatus) => {
-                    const visibleTickets = tickets.filter((t: any) => {
-                      if (ticketMonthFilter === 'all') return true;
-                      const inDue = t.plannedDue?.startsWith(ticketMonthFilter);
-                      const inStart = t.plannedStart?.startsWith(ticketMonthFilter);
-                      const inComp = t.completedDate?.startsWith(ticketMonthFilter);
-                      if (ticketMonthFilter === '2026-10') return inDue || inStart || inComp || (!inDue && !inStart);
-                      return inDue || inStart || inComp;
-                    });
-                    const colTickets = visibleTickets.filter((t: any) => t.status === columnStatus);
-                    return (
-                      <div key={columnStatus} className="space-y-3">
-                        <div className="flex items-center justify-between px-1">
-                          <span className="font-bold text-xs uppercase tracking-wider text-slate-400">
-                            {columnStatus}
-                          </span>
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200/60 dark:bg-white/[0.06] text-slate-500">
-                            {colTickets.length}
+                <div className="w-full space-y-3">
+                  {/* Zoho Sprints Sub-Header Bar (Matching Reference Layout) */}
+                  <div className="w-full flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/60 dark:bg-slate-950/70 border border-slate-200/80 dark:border-white/[0.08] backdrop-blur-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-slate-900 dark:text-white">V4 Sprint 95</span>
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            Active Sprint
                           </span>
                         </div>
+                        <p className="text-[10px] text-slate-400">
+                          Version 4 in progress · {kanbanColumns.length} Dynamic Workflow Stages
+                        </p>
+                      </div>
+                    </div>
 
-                        <div className="space-y-3 min-h-[300px]">
-                          {colTickets.map((t) => (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Group By Selector */}
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                        <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Group by:</span>
+                        <select
+                          value={kanbanGroupBy}
+                          onChange={(e) => setKanbanGroupBy(e.target.value as any)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08] text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                        >
+                          <option value="stages" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                            Status Name ({availableDynamicStatuses.length} Dynamic)
+                          </option>
+                          <option value="core" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                            Core 4 Statuses
+                          </option>
+                          <option value="department" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                            Department
+                          </option>
+                        </select>
+                      </div>
+
+                      {/* Density Selector */}
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                        <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">View:</span>
+                        <select
+                          value={kanbanCardDensity}
+                          onChange={(e) => setKanbanCardDensity(e.target.value as any)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08] text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                        >
+                          <option value="detail" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                            Detail View
+                          </option>
+                          <option value="compact" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                            Compact View
+                          </option>
+                        </select>
+                      </div>
+
+                      {/* Metrics Summary Pill */}
+                      <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs font-mono font-medium text-indigo-300">
+                        <span>{visibleFilteredTickets.length} Items</span>
+                        <span className="text-slate-600 dark:text-slate-500">•</span>
+                        <span>{kanbanColumns.length} Stages</span>
+                        <span className="text-slate-600 dark:text-slate-500">•</span>
+                        <span>{totalSprintMetrics.pts} Pts</span>
+                        <span className="text-slate-600 dark:text-slate-500">•</span>
+                        <span>{totalSprintMetrics.hrs}h</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Horizontal Scroll Track for Columns (Full Width) */}
+                  <div className="w-full overflow-x-auto pb-4 pt-1 custom-scrollbar">
+                    <div className="flex gap-3.5 min-w-full items-start">
+                      {kanbanColumns.map((col) => {
+                        const colTickets = visibleFilteredTickets.filter(col.filter);
+                        const colPoints = colTickets.reduce(
+                          (acc: number, t: any) => {
+                            const rawPts = t.points !== undefined && t.points !== null
+                              ? Number(t.points)
+                              : (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null
+                              ? Number((t.rawPayload as any).points)
+                              : null;
+                            const pts = rawPts !== null && !isNaN(rawPts) ? rawPts : 0;
+                            return acc + pts;
+                          },
+                          0
+                        );
+                        const colHours = colTickets.reduce((acc: number, t: any) => acc + (Number(t.totalWeightage) || 0), 0);
+                        const isCollapsed = kanbanCollapsedColumns[col.id];
+
+                        if (isCollapsed) {
+                          return (
                             <div
+                              key={col.id}
+                              onClick={() =>
+                                setKanbanCollapsedColumns((prev) => ({ ...prev, [col.id]: false }))
+                              }
+                              className="w-10 min-w-10 h-[500px] rounded-2xl bg-slate-900/40 dark:bg-slate-950/50 border border-slate-200/80 dark:border-white/[0.08] flex flex-col items-center py-3 cursor-pointer hover:border-indigo-500/40 hover:bg-slate-900/60 transition-all select-none"
+                              title={`Click to expand ${col.title}`}
+                            >
+                              <div className={`w-2 h-2 rounded-full ${col.topBarColor} mb-3`} />
+                              <span className="text-[11px] font-bold text-slate-400 rotate-90 whitespace-nowrap mt-12 tracking-wider">
+                                {col.title} ({colTickets.length})
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={col.id}
+                            className="w-[300px] min-w-[280px] max-w-[340px] flex-1 flex-shrink-0 flex flex-col rounded-2xl bg-slate-900/60 dark:bg-slate-950/75 border border-slate-200/80 dark:border-white/[0.08] overflow-hidden shadow-sm backdrop-blur-sm"
+                          >
+                            {/* Column Top Accent Stripe */}
+                            <div className={`h-1 w-full ${col.topBarColor}`} />
+
+                            {/* Column Header */}
+                            <div className="p-3 bg-slate-100/60 dark:bg-white/[0.03] border-b border-slate-200/80 dark:border-white/[0.06] flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Star className={`w-3.5 h-3.5 ${col.starColor} flex-shrink-0 fill-current`} />
+                                <span className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate" title={col.title}>
+                                  {col.title}
+                                </span>
+                                <span className="text-[11px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-slate-200/80 dark:bg-white/[0.08] text-slate-400">
+                                  {colTickets.length}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-mono text-slate-400 font-semibold">
+                                  {colPoints} pts
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    setKanbanCollapsedColumns((prev) => ({ ...prev, [col.id]: true }))
+                                  }
+                                  className="text-slate-500 hover:text-slate-300 p-0.5"
+                                  title="Collapse column"
+                                >
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Min / Max Sub-header Bar (Zoho Sprints Style) */}
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 px-3.5 py-1 bg-slate-100/30 dark:bg-white/[0.015] border-b border-slate-200/60 dark:border-white/[0.04] font-mono">
+                              <span>Min: —</span>
+                              <span>Max: —</span>
+                            </div>
+
+                            {/* Ticket Cards List */}
+                            <div className="space-y-3 p-2.5 min-h-[420px] max-h-[calc(100vh-320px)] overflow-y-auto custom-scrollbar">
+                              {colTickets.length === 0 ? (
+                                <div className="h-32 flex flex-col items-center justify-center text-center p-4 border border-dashed border-slate-200/60 dark:border-white/[0.06] rounded-xl text-slate-500 text-xs">
+                                  <span>No items in this stage</span>
+                                </div>
+                              ) : (
+                                colTickets.map((t) => (
+                                  <div
+                                    key={t.id}
+                                    onClick={() => setSelectedTicket(t)}
+                                    className={`group relative bg-white dark:bg-slate-900/95 rounded-xl border border-slate-200/80 dark:border-white/[0.08] p-3 space-y-2 cursor-pointer hover:border-indigo-500/50 hover:shadow-lg transition-all duration-150 border-l-[3.5px] ${col.accentBorder}`}
+                                  >
+                                    {/* Card Top Row: Type Icon + Ref + Priority + Designer Avatar */}
+                                    <div className="flex items-center justify-between gap-1.5">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <Zap className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400/20 flex-shrink-0" />
+                                        <span className="font-mono text-xs font-bold text-sky-400 hover:text-sky-300 hover:underline truncate">
+                                          {t.ref}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                            t.priority === 'Critical'
+                                              ? 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
+                                              : t.priority === 'High'
+                                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                                              : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                                          }`}
+                                        >
+                                          {t.priority}
+                                        </span>
+                                        {t.designer && (
+                                          <span
+                                            className="w-5 h-5 rounded-full bg-pink-500/20 border border-pink-500/30 text-[9px] font-bold text-pink-300 flex items-center justify-center flex-shrink-0"
+                                            title={`Designer: ${t.designer}`}
+                                          >
+                                            {t.designer
+                                              .split(' ')
+                                              .map((n: string) => n[0])
+                                              .join('')
+                                              .slice(0, 2)
+                                              .toUpperCase()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Item Title */}
+                                    <div>
+                                      <h4 className="font-semibold text-xs leading-snug text-slate-800 dark:text-slate-100 group-hover:text-indigo-400 transition-colors line-clamp-2">
+                                        {t.title}
+                                      </h4>
+                                    </div>
+
+                                    {/* Customer Box Capsule (Zoho Sprints Style) */}
+                                    {t.customer && (
+                                      <div>
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]">
+                                          [ {t.customer} ]
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* Detail View Specific Badges */}
+                                    {kanbanCardDensity === 'detail' && (
+                                      <>
+                                        {/* Tags & Custom Field Badges */}
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                          {t.department && (
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                              <Building2 className="w-2.5 h-2.5" />
+                                              <span className="truncate max-w-[110px]">{t.department}</span>
+                                            </span>
+                                          )}
+                                          {t.designer && (
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                                              <Palette className="w-2.5 h-2.5" />
+                                              <span className="truncate max-w-[110px]">{t.designer}</span>
+                                            </span>
+                                          )}
+                                          {t.prototypeUrl && (
+                                            <a
+                                              href={t.prototypeUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25 transition-colors"
+                                              title="Open Figma Prototype"
+                                            >
+                                              <ExternalLink className="w-2.5 h-2.5" />
+                                              <span>Prototype</span>
+                                            </a>
+                                          )}
+                                          {t.docUrl && (
+                                            <a
+                                              href={t.docUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30 hover:bg-blue-500/25 transition-colors"
+                                              title="Open Spec Documentation"
+                                            >
+                                              <FileText className="w-2.5 h-2.5" />
+                                              <span>Spec Doc</span>
+                                            </a>
+                                          )}
+                                        </div>
+
+                                        {/* Requirement Dates (Start -> Due) */}
+                                        {(t.plannedStart || t.plannedDue) && (
+                                          <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-100/50 dark:bg-white/[0.03] px-2 py-0.5 rounded border border-slate-200/60 dark:border-white/[0.05]">
+                                            <Calendar className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                                            <span className="font-mono truncate">
+                                              {t.plannedStart || '—'} → {t.plannedDue || '—'}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+
+                                    {/* Footer: Checklist + Hours/Points + Allocations Stack */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/[0.06] text-[10px]">
+                                      <div className="flex items-center gap-2">
+                                        <div
+                                          className="flex items-center gap-1 text-slate-400 font-mono"
+                                          title="Allocations count"
+                                        >
+                                          <CheckSquare className="w-3 h-3 text-slate-500" />
+                                          <span>0{Math.max(1, t.allocations?.length || 1)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-300 border border-slate-200/50 dark:border-white/[0.06]">
+                                          <Clock className="w-2.5 h-2.5 text-indigo-400" />
+                                          <span>
+                                            {t.totalWeightage}h ({t.points || Math.max(1, Math.round(t.totalWeightage / 5))} pts)
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Assigned Members Initials Stack */}
+                                      <div className="flex items-center -space-x-1.5">
+                                        {t.allocations && t.allocations.length > 0 ? (
+                                          t.allocations.slice(0, 3).map((al: any) => (
+                                            <span
+                                              key={al.id}
+                                              className="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-400/40 text-[9px] font-bold text-indigo-200 flex items-center justify-center"
+                                              title={`${al.memberName} (${al.allocatedHours}h)`}
+                                            >
+                                              {al.memberInitials || al.memberName?.slice(0, 2).toUpperCase()}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-slate-500 text-[10px]">Unassigned</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Table View */
+                <div className="modern-card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Ref</th>
+                          <th className="py-3 px-4">Title & Client</th>
+                          <th className="py-3 px-4">Department</th>
+                          <th className="py-3 px-4">Designer</th>
+                          <th className="py-3 px-4">Req Dates</th>
+                          <th className="py-3 px-4">Total Weightage</th>
+                          <th className="py-3 px-4">Shared Allocations</th>
+                          <th className="py-3 px-4">Priority</th>
+                          <th className="py-3 px-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+                        {visibleFilteredTickets.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-slate-400">
+                              No requirement tickets match the current filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          visibleFilteredTickets.map((t: any) => (
+                            <tr
                               key={t.id}
                               onClick={() => setSelectedTicket(t)}
-                              className="modern-card p-4 space-y-3 cursor-pointer hover:border-indigo-500/40"
+                              className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="font-mono text-xs font-bold text-indigo-500">{t.ref}</span>
+                              <td className="py-3 px-4 font-mono font-bold text-indigo-500 whitespace-nowrap">{t.ref}</td>
+                              <td className="py-3 px-4 max-w-xs">
+                                <p className="font-semibold text-slate-900 dark:text-white truncate">{t.title}</p>
+                                <p className="text-[11px] text-slate-400 truncate">{t.customer}</p>
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                {t.department ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    {t.department}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 text-[10px]">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                {t.designer ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                                    {t.designer}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 text-[10px]">Unassigned</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                                {t.plannedStart || '—'} → {t.plannedDue || '—'}
+                              </td>
+                              <td className="py-3 px-4 font-bold whitespace-nowrap">{t.totalWeightage}h</td>
+                              <td className="py-3 px-4 text-slate-300 max-w-xs truncate">
+                                {t.allocations?.length > 0
+                                  ? t.allocations.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ')
+                                  : '—'}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
                                 <span
                                   className={`pill-badge ${
                                     t.priority === 'Critical'
@@ -2029,84 +3058,13 @@ export default function RecActsFullyFunctionalApp() {
                                 >
                                   {t.priority}
                                 </span>
-                              </div>
-
-                              <div>
-                                <h4 className="font-semibold text-xs leading-snug">{t.title}</h4>
-                                <p className="text-[11px] text-slate-400 mt-1">{t.customer}</p>
-                              </div>
-
-                              {/* Shared Allocations Bar */}
-                              <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-white/[0.06]">
-                                <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                  <span>Allocations ({t.totalWeightage}h total):</span>
-                                </div>
-                                <div className="space-y-1">
-                                  {t.allocations?.map((al: any) => (
-                                    <div key={al.id} className="flex items-center justify-between text-[11px]">
-                                      <span className="text-slate-300">{al.memberName}</span>
-                                      <span className="font-mono font-bold text-indigo-400">
-                                        {al.allocatedHours}h <span className="text-slate-500 font-normal">({al.loggedHours}h)</span>
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Table View */
-                <div className="modern-card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                        <tr>
-                          <th className="py-3 px-4">Ref</th>
-                          <th className="py-3 px-4">Title & Client</th>
-                          <th className="py-3 px-4">Total Weightage</th>
-                          <th className="py-3 px-4">Shared Allocations</th>
-                          <th className="py-3 px-4">Priority</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4">Due Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                        {tickets.filter((t: any) => {
-                          if (ticketMonthFilter === 'all') return true;
-                          const inDue = t.plannedDue?.startsWith(ticketMonthFilter);
-                          const inStart = t.plannedStart?.startsWith(ticketMonthFilter);
-                          const inComp = t.completedDate?.startsWith(ticketMonthFilter);
-                          if (ticketMonthFilter === '2026-10') return inDue || inStart || inComp || (!inDue && !inStart);
-                          return inDue || inStart || inComp;
-                        }).map((t) => (
-                          <tr
-                            key={t.id}
-                            onClick={() => setSelectedTicket(t)}
-                            className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] cursor-pointer"
-                          >
-                            <td className="py-3 px-4 font-mono font-bold text-indigo-500">{t.ref}</td>
-                            <td className="py-3 px-4">
-                              <p className="font-semibold">{t.title}</p>
-                              <p className="text-[11px] text-slate-400">{t.customer}</p>
-                            </td>
-                            <td className="py-3 px-4 font-bold">{t.totalWeightage}h</td>
-                            <td className="py-3 px-4">
-                              {t.allocations?.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ')}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="pill-badge bg-amber-500/15 text-amber-500">{t.priority}</span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="pill-badge bg-indigo-500/15 text-indigo-400">{t.status}</span>
-                            </td>
-                            <td className="py-3 px-4 font-mono text-[11px]">{t.plannedDue}</td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span className="pill-badge bg-indigo-500/15 text-indigo-400">{t.status}</span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2693,13 +3651,13 @@ export default function RecActsFullyFunctionalApp() {
                         <tr>
                           <th className="py-2.5 px-3">Staff Name</th>
                           <th className="py-2.5 px-3">Role</th>
-                          <th className="py-2.5 px-3">KPI Basis</th>
+                          <th className="py-2.5 px-3">Level (Scale)</th>
                           <th className="py-2.5 px-3 text-right">Target</th>
                           <th className="py-2.5 px-3 text-right">Assigned</th>
                           <th className="py-2.5 px-3 text-right text-rose-400">Deducted</th>
                           <th className="py-2.5 px-3 text-right text-emerald-400">Achieved Net</th>
                           <th className="py-2.5 px-3 text-right font-bold">Ach %</th>
-                          <th className="py-2.5 px-3 text-center">Tickets</th>
+                          <th className="py-2.5 px-3 text-center">Done / Total</th>
                           <th className="py-2.5 px-3 text-center">Reassigned</th>
                           <th className="py-2.5 px-3 text-right">Est. Hrs</th>
                           <th className="py-2.5 px-3 text-right">Actual Hrs</th>
@@ -2734,7 +3692,9 @@ export default function RecActsFullyFunctionalApp() {
                               )}
                             </td>
                             <td className="py-2.5 px-3 text-slate-400 text-[11px]">{s.role}</td>
-                            <td className="py-2.5 px-3 text-slate-400 text-[11px]">{s.kpiBasis}</td>
+                            <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                              {s.experienceLevel} ({s.experienceMultiplier}x)
+                            </td>
                             <td className="py-2.5 px-3 text-right font-medium">{s.targetWeightage}</td>
                             <td className="py-2.5 px-3 text-right">{s.assignedWeightage}</td>
                             <td className="py-2.5 px-3 text-right text-rose-400">
@@ -2747,7 +3707,8 @@ export default function RecActsFullyFunctionalApp() {
                               {s.achievementDisplay}
                             </td>
                             <td className="py-2.5 px-3 text-center text-slate-400">
-                              {s.ticketsAssigned}
+                              <span className="font-semibold text-slate-200">{s.ticketsCompleted}</span>
+                              <span className="text-slate-500"> / {s.ticketsAssigned}</span>
                             </td>
                             <td className="py-2.5 px-3 text-center">
                               {s.reassignedTickets > 0 ? (
@@ -2792,13 +3753,26 @@ export default function RecActsFullyFunctionalApp() {
                             <td className="py-3 px-3 text-right text-rose-400">-{kpiData.teamTotal.weightageDeducted}</td>
                             <td className="py-3 px-3 text-right text-emerald-400">{kpiData.teamTotal.achievedWeightageNet}</td>
                             <td className="py-3 px-3 text-right text-indigo-400 font-extrabold">{kpiData.teamTotal.achievementDisplay}</td>
-                            <td className="py-3 px-3 text-center">{kpiData.teamTotal.ticketsAssigned}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="font-semibold text-slate-200">{kpiData.teamTotal.ticketsCompleted}</span>
+                              <span className="text-slate-500"> / {kpiData.teamTotal.ticketsAssigned}</span>
+                            </td>
                             <td className="py-3 px-3 text-center text-amber-400">{kpiData.teamTotal.reassignedTickets}</td>
                             <td className="py-3 px-3 text-right">{kpiData.teamTotal.estHrsCompleted}</td>
                             <td className="py-3 px-3 text-right">{kpiData.teamTotal.actualHrsCompleted}</td>
-                            <td className="py-3 px-3 text-right text-emerald-400">{kpiData.teamTotal.efficiencyDisplay}</td>
+                            <td className="py-3 px-3 text-right text-emerald-400 font-bold">{kpiData.teamTotal.efficiencyDisplay}</td>
                             <td className="py-3 px-3 text-center">
-                              <span className="pill-badge bg-rose-500/15 text-rose-500 text-[10px] font-bold px-2 py-0.5">
+                              <span
+                                className={`pill-badge text-[10px] font-bold px-2 py-0.5 ${
+                                  kpiData.teamTotal.rating === 'Excellent'
+                                    ? 'bg-emerald-500/15 text-emerald-500'
+                                    : kpiData.teamTotal.rating === 'Good'
+                                    ? 'bg-blue-500/15 text-blue-500'
+                                    : kpiData.teamTotal.rating === 'Average'
+                                    ? 'bg-amber-500/15 text-amber-500'
+                                    : 'bg-rose-500/15 text-rose-500'
+                                }`}
+                              >
                                 {kpiData.teamTotal.rating}
                               </span>
                             </td>
@@ -2810,10 +3784,12 @@ export default function RecActsFullyFunctionalApp() {
 
                   {/* Formula and Footnotes */}
                   <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] text-[11px] text-slate-400 space-y-1">
-                    <p>• <strong>Achievement %</strong> = Achieved Weightage (Net, after reassign deductions) / Target Weightage (158h).</p>
-                    <p>• <strong>Reassign deduction</strong>: 1st reassign = 5%, 2nd reassign = 10% of ticket weightage.</p>
-                    <p>• <strong>Efficiency %</strong> = Estimated hours / Actual hours on completed tickets (above 100% = delivered faster than estimated).</p>
-                    <p>• <strong>Weightage Roll-up</strong>: TL = average of reporting designers (including zero work); Manager = equal average of reporting TLs. Counts & hours remain totals. TEAM TOTAL counts designers once.</p>
+                    <p>• <strong>Target Weightage</strong> = (Working Days - Leave Days) × 8h × 0.9 × Capacity % × Experience Multiplier (Junior 0.8x, Mid 1.0x, Senior 1.5x).</p>
+                    <p>• <strong>1 Weightage = 1 Estimated Hour</strong>. Weightage is strictly based on estimated hours, not actual logged hours.</p>
+                    <p>• <strong>Net Weightage</strong> = Weightage × (1 - Reassign Deduction %). Deductions: 1st reassign = 5%, 2nd = 10%, 3rd+ = 15%.</p>
+                    <p>• <strong>Achieved Weightage</strong> = Sum of Net Weightage of Completed tickets only. In-progress tickets contribute 0.</p>
+                    <p>• <strong>Efficiency %</strong> = Estimated Hours / Actual Hours on completed tickets.</p>
+                    <p>• <strong>Ratings</strong>: Excellent (≥100%), Good (≥80%), Average (≥60%), Needs Improvement (&lt;60%).</p>
                   </div>
                 </div>
               )}
@@ -3460,6 +4436,78 @@ export default function RecActsFullyFunctionalApp() {
           )}
 
           {/* ========================================================================= */}
+          {/* VIEW: TEAM & USER MANAGEMENT (LEAD, MANAGER, HR, OWNER) */}
+          {/* ========================================================================= */}
+          {activeTab === 'users' && (
+            (isDataLoading || tabTransitioning === 'users') ? (
+              <GenericTabSkeleton title="Team & User Management" />
+            ) : !['lead', 'manager', 'hr', 'owner', 'god'].includes(role) && !hasPermission(role as FunctionalRole, 'users:view') ? (
+              renderAccessRestricted('User Management Restricted', 'Managing users and designer mappings requires Team Lead, Manager, or HR privileges.')
+            ) : (
+              <UserManagementView
+                currentRole={role}
+                onShowToast={showToast}
+              />
+            )
+          )}
+
+          {/* ========================================================================= */}
+          {/* VIEW: ZOHO SPRINTS REST API INTEGRATION & CONFIGURATION */}
+          {/* ========================================================================= */}
+          {activeTab === 'zoho' && (
+            <ZohoIntegrationView
+              hasZohoAuthConnected={hasZohoAuthConnected}
+              isSyncingZoho={isSyncingZoho}
+              zohoSchedule={zohoSchedule}
+              setZohoSchedule={setZohoSchedule}
+              availableZohoProjects={availableZohoProjects}
+              selectedZohoProjectIds={selectedZohoProjectIds}
+              zohoProjectSearch={zohoProjectSearch}
+              setZohoProjectSearch={setZohoProjectSearch}
+              isSavingZohoProjects={isSavingZohoProjects}
+              customZohoProjId={customZohoProjId}
+              setCustomZohoProjId={setCustomZohoProjId}
+              customZohoProjName={customZohoProjName}
+              setCustomZohoProjName={setCustomZohoProjName}
+              zohoTokenInput={zohoTokenInput}
+              setZohoTokenInput={setZohoTokenInput}
+              zohoRegionInput={zohoRegionInput}
+              setZohoRegionInput={setZohoRegionInput}
+              zohoPortalInput={zohoPortalInput}
+              setZohoPortalInput={setZohoPortalInput}
+              zohoClientIdInput={zohoClientIdInput}
+              setZohoClientIdInput={setZohoClientIdInput}
+              zohoClientSecretInput={zohoClientSecretInput}
+              setZohoClientSecretInput={setZohoClientSecretInput}
+              zohoErrorMessage={zohoErrorMessage}
+              showAdvancedCredentials={showAdvancedCredentials}
+              setShowAdvancedCredentials={setShowAdvancedCredentials}
+              discoveredZohoFields={discoveredZohoFields}
+              customFieldsSchema={zohoCustomFieldsSchema}
+              zohoRawItemReferences={zohoRawItemReferences}
+              selectedRawTicketRef={selectedRawTicketRef}
+              setSelectedRawTicketRef={setSelectedRawTicketRef}
+              selectedRawPayload={selectedRawPayload}
+              isSavingSchedule={isSavingSchedule}
+              schemaFieldFilter={schemaFieldFilter}
+              setSchemaFieldFilter={setSchemaFieldFilter}
+              onSync={() => handleSyncZoho(false)}
+              onSaveProjects={() => handleSaveZohoProjects()}
+              onToggleProject={toggleZohoProject}
+              onSelectAllProjects={handleSelectAllZohoProjects}
+              onDeselectAllProjects={handleDeselectAllZohoProjects}
+              onSelectDefaultProjects={handleSelectDefaultZohoProjects}
+              onAddCustomProject={handleAddCustomZohoProject}
+              onSaveSchedule={handleSaveZohoSchedule}
+              onSelectRawTicket={(ref) => {
+                setSelectedRawTicketRef(ref);
+                loadZohoSchemaAndSchedule(ref);
+              }}
+              onShowToast={showToast}
+            />
+          )}
+
+          {/* ========================================================================= */}
           {/* 13. VIEW: PLATFORM GOD MODE */}
           {/* ========================================================================= */}
           {activeTab === 'god' && (
@@ -3795,6 +4843,36 @@ export default function RecActsFullyFunctionalApp() {
                 <div>
                   <span className="text-slate-400 block mb-1">Description:</span>
                   <p className="text-slate-300">{selectedTicket.description}</p>
+                </div>
+              )}
+
+              {/* Zoho Sprints Custom Fields */}
+              {selectedTicket.customFields && Object.keys(selectedTicket.customFields).length > 0 && (
+                <div>
+                  <span className="text-slate-400 block mb-1.5 font-medium flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Zoho Sprints Custom Fields:</span>
+                  </span>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs max-h-60 overflow-y-auto">
+                    {Object.entries<any>(selectedTicket.customFields).map(([cfKey, cfVal]: [string, any]) => (
+                      <div key={cfKey} className="space-y-0.5">
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">{cfVal.label || cfKey}</span>
+                        {String(cfVal.displayValue || cfVal.rawValue || '').startsWith('http') ? (
+                          <a
+                            href={String(cfVal.displayValue || cfVal.rawValue)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-400 hover:underline flex items-center gap-1 truncate"
+                          >
+                            <span className="truncate">{cfVal.label || 'Open Link'}</span>
+                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                          </a>
+                        ) : (
+                          <p className="font-medium text-slate-200">{String(cfVal.displayValue ?? cfVal.rawValue ?? '—')}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

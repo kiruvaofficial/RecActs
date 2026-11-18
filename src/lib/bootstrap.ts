@@ -114,7 +114,10 @@ export async function getBootstrapData({
     capacityManager: (org?.capacityFactorManager || 80) / 100,
     deduction1Reassign: 0.05,
     deduction2Reassign: 0.1,
-    deduction3Reassign: 0.1,
+    deduction3Reassign: 0.15,
+    experienceJunior: 0.8,
+    experienceMid: 1.0,
+    experienceSenior: 1.5,
   };
 
   const teamFilter: any = { organizationId };
@@ -459,6 +462,18 @@ export async function getBootstrapData({
     })),
     dependencies: t.dependencies.map((d) => d.dependsOn.reference),
     hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
+    customFields: t.customFields,
+    department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
+    designer: (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue || (t.customFields as any)?.UDF_MULTIPKL10?.displayValue || (t.customFields as any)?.UDF_PKL15?.displayValue || null,
+    developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
+    rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || (t.rawPayload as any)?.status_details?.status_name || t.status,
+    itemType: (t.rawPayload as any)?.itemTypeName || (t.rawPayload as any)?.item_type_name || (t.rawPayload as any)?.type || 'Requirement',
+    prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
+    docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
+    points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
+    itemNo: (t.rawPayload as any)?.itemNo || t.reference.replace('REQ-I', ''),
+    requirementStartDate: t.plannedStartDate,
+    requirementEndDate: t.plannedDueDate,
     history: t.history || [],
   }));
 
