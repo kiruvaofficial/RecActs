@@ -1,6 +1,24 @@
 import prisma from '@/lib/prisma';
 import { processAutoAttendance } from '@/lib/auto-attendance';
-import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
+import { resolveZohoDesignerValue, extractIndividualDesigners, resolveTicketReference } from '@/lib/zoho-designer-resolver';
+
+function parseZohoDate(val: any): string | null {
+  if (!val || val === '-1' || val === -1) return null;
+  let d: Date;
+  if (typeof val === 'number') {
+    d = new Date(val);
+  } else if (typeof val === 'string' && /^\d{10,13}$/.test(val.trim())) {
+    const num = Number(val.trim());
+    d = new Date(num > 9999999999 ? num : num * 1000);
+  } else {
+    d = new Date(val);
+  }
+  if (isNaN(d.getTime())) {
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.substring(0, 10);
+    return null;
+  }
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
 import {
   calculateDepartmentKpi,
   calculateTicketDeduction,
@@ -439,53 +457,81 @@ export async function getBootstrapData({
   };
 
   // Format Tickets
-  const ticketsFormatted = allOrgTickets.map((t) => ({
-    id: t.id,
-    ref: resolveTicketReference(t.reference, t.title, (t.rawPayload as any)?.itemNo),
-    title: t.title,
-    description: t.description,
-    customer: t.customerName,
-    priority: t.priority,
-    status: t.status,
-    plannedStart: t.plannedStartDate,
-    plannedDue: t.plannedDueDate,
-    totalWeightage: t.totalEstimatedHours,
-    teamName: t.team?.name || 'Alpha',
-    reassignmentCount: t.reassignmentCount,
-    allocations: t.assignments.map((a) => ({
-      id: a.id,
-      memberId: a.membershipId,
-      memberName: a.membership.user.name,
-      memberInitials: a.membership.user.initials,
-      allocatedHours: a.allocatedHours,
-      loggedHours: a.loggedHours,
-      status: a.status,
-    })),
-    dependencies: t.dependencies.map((d) => resolveTicketReference(d.dependsOn.reference, d.dependsOn.title)),
-    hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
-    customFields: t.customFields,
-    department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
-    designer:
-      resolveZohoDesignerValue(
-        (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue ||
-        (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.rawValue ||
-        (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
-        (t.customFields as any)?.UDF_MULTIPKL10?.rawValue ||
-        (t.customFields as any)?.UDF_PKL15?.displayValue ||
-        (t.customFields as any)?.UDF_PKL15?.rawValue ||
-        null
-      ) || null,
-    developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
-    rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || (t.rawPayload as any)?.status_details?.status_name || t.status,
-    itemType: (t.rawPayload as any)?.itemTypeName || (t.rawPayload as any)?.item_type_name || (t.rawPayload as any)?.type || 'Requirement',
-    prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
-    docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
-    points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
-    itemNo: (t.rawPayload as any)?.itemNo || t.reference.replace(/^[A-Z]+-I?/i, ''),
-    requirementStartDate: t.plannedStartDate,
-    requirementEndDate: t.plannedDueDate,
-    history: t.history || [],
-  }));
+  const ticketsFormatted = allOrgTickets.map((t) => {
+    const rawDesignerVal =
+      (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue ||
+      (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.rawValue ||
+      (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
+      (t.customFields as any)?.UDF_MULTIPKL10?.rawValue ||
+      (t.customFields as any)?.UDF_PKL15?.displayValue ||
+      (t.customFields as any)?.UDF_PKL15?.rawValue ||
+      (t.rawPayload as any)?.UDF_MULTIPKL10 ||
+      (t.rawPayload as any)?.UDF_PKL15 ||
+      null;
+
+    const resolvedDesigner = rawDesignerVal ? resolveZohoDesignerValue(rawDesignerVal) : null;
+    const designersList = rawDesignerVal ? extractIndividualDesigners(rawDesignerVal) : [];
+
+    const cf = (t.customFields as any) || {};
+    const raw = (t.rawPayload as any) || {};
+
+    const reqStart = parseZohoDate(cf.UDF_DATETIME10?.rawValue || cf.UDF_DATETIME10?.displayValue || raw.UDF_DATETIME10 || cf.UDF_DATE10?.rawValue || raw.UDF_DATE10)
+      || parseZohoDate(t.plannedStartDate);
+    const reqEnd = parseZohoDate(cf.UDF_DATETIME6?.rawValue || cf.UDF_DATETIME6?.displayValue || raw.UDF_DATETIME6 || cf.UDF_DATE6?.rawValue || raw.UDF_DATE6)
+      || parseZohoDate(t.plannedDueDate);
+    const devStart = parseZohoDate(cf.UDF_DATE4?.rawValue || cf.UDF_DATE4?.displayValue || raw.UDF_DATE4);
+    const devEnd = parseZohoDate(cf.UDF_DATE3?.rawValue || cf.UDF_DATE3?.displayValue || raw.UDF_DATE3);
+    const targetLive = parseZohoDate(cf.UDF_DATE5?.rawValue || cf.UDF_DATE5?.displayValue || raw.UDF_DATE5);
+    const actualLive = parseZohoDate(cf.UDF_DATETIME8?.rawValue || cf.UDF_DATETIME8?.displayValue || raw.UDF_DATETIME8);
+    const testingStart = parseZohoDate(cf.UDF_DATE1?.rawValue || cf.UDF_DATE1?.displayValue || raw.UDF_DATE1);
+    const testingEnd = parseZohoDate(cf.UDF_DATE2?.rawValue || cf.UDF_DATE2?.displayValue || raw.UDF_DATE2);
+
+    return {
+      id: t.id,
+      ref: resolveTicketReference(t.reference, t.title, (t.rawPayload as any)?.itemNo),
+      title: t.title,
+      description: t.description,
+      customer: t.customerName,
+      priority: t.priority,
+      status: t.status,
+      plannedStart: t.plannedStartDate,
+      plannedDue: t.plannedDueDate,
+      totalWeightage: t.totalEstimatedHours,
+      teamName: t.team?.name || 'Alpha',
+      reassignmentCount: t.reassignmentCount,
+      allocations: t.assignments.map((a) => ({
+        id: a.id,
+        memberId: a.membershipId,
+        memberName: a.membership.user.name,
+        memberInitials: a.membership.user.initials,
+        allocatedHours: a.allocatedHours,
+        loggedHours: a.loggedHours,
+        status: a.status,
+      })),
+      dependencies: t.dependencies.map((d) => resolveTicketReference(d.dependsOn.reference, d.dependsOn.title)),
+      hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
+      customFields: t.customFields,
+      department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
+      designer: resolvedDesigner,
+      designers: designersList.length > 0 ? designersList : (resolvedDesigner ? [resolvedDesigner] : []),
+      developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
+      rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || (t.rawPayload as any)?.status_details?.status_name || t.status,
+      itemType: (t.rawPayload as any)?.itemTypeName || (t.rawPayload as any)?.item_type_name || (t.rawPayload as any)?.type || 'Requirement',
+      prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
+      docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
+      points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
+      itemNo: (t.rawPayload as any)?.itemNo || t.reference.replace(/^[A-Z]+-I?/i, ''),
+      requirementStartDate: reqStart,
+      requirementEndDate: reqEnd,
+      devStartDate: devStart,
+      devEndDate: devEnd,
+      targetLiveDate: targetLive,
+      actualLiveDate: actualLive,
+      testingStartDate: testingStart,
+      testingEndDate: testingEnd,
+      history: t.history || [],
+    };
+  });
 
   // Format Approvals
   const approvalsFormatted = approvalLogsRaw.map((wl) => {

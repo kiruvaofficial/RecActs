@@ -73,7 +73,14 @@ import {
   GenericTabSkeleton,
 } from '@/components/Skeletons';
 import { ZohoIntegrationView } from '@/components/zoho/ZohoIntegrationView';
+import {
+  loadUserFilterPreferences,
+  saveUserFilterPreferences,
+  resetUserFilterPreferences,
+  syncUserFilterPreferencesFromServer,
+} from '@/lib/user-filters';
 import { UserManagementView } from '@/components/users/UserManagementView';
+import InteractiveGanttView from '@/components/timeline/InteractiveGanttView';
 import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 
 export default function RecActsFullyFunctionalApp() {
@@ -215,6 +222,90 @@ export default function RecActsFullyFunctionalApp() {
   const [kanbanGroupBy, setKanbanGroupBy] = useState<'stages' | 'core' | 'department'>('stages');
   const [kanbanCardDensity, setKanbanCardDensity] = useState<'detail' | 'compact'>('detail');
   const [kanbanCollapsedColumns, setKanbanCollapsedColumns] = useState<Record<string, boolean>>({});
+  const [reportMonthFilter, setReportMonthFilter] = useState<string>('all');
+
+  const pageUserKey = currentUser?.userId || currentUser?.id || currentUser?.name || 'guest';
+
+  // 1. Ticket Filters Auto-save & Hydration
+  useEffect(() => {
+    if (!currentUser) return;
+    const saved = loadUserFilterPreferences(pageUserKey, 'tickets', {
+      ticketMonthFilter: 'all',
+      ticketDeptFilter: 'all',
+      ticketDesignerFilter: 'all',
+      ticketSearchQuery: '',
+      ticketViewMode: 'board' as 'board' | 'table',
+      kanbanGroupBy: 'stages' as 'stages' | 'core' | 'department',
+      kanbanCardDensity: 'detail' as 'detail' | 'compact',
+    });
+    if (saved.ticketMonthFilter) setTicketMonthFilter(saved.ticketMonthFilter);
+    if (saved.ticketDeptFilter) setTicketDeptFilter(saved.ticketDeptFilter);
+    if (saved.ticketDesignerFilter) setTicketDesignerFilter(saved.ticketDesignerFilter);
+    if (typeof saved.ticketSearchQuery === 'string') setTicketSearchQuery(saved.ticketSearchQuery);
+    if (saved.ticketViewMode) setTicketViewMode(saved.ticketViewMode);
+    if (saved.kanbanGroupBy) setKanbanGroupBy(saved.kanbanGroupBy);
+    if (saved.kanbanCardDensity) setKanbanCardDensity(saved.kanbanCardDensity);
+  }, [pageUserKey, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    saveUserFilterPreferences(pageUserKey, 'tickets', {
+      ticketMonthFilter,
+      ticketDeptFilter,
+      ticketDesignerFilter,
+      ticketSearchQuery,
+      ticketViewMode,
+      kanbanGroupBy,
+      kanbanCardDensity,
+    });
+  }, [pageUserKey, currentUser, ticketMonthFilter, ticketDeptFilter, ticketDesignerFilter, ticketSearchQuery, ticketViewMode, kanbanGroupBy, kanbanCardDensity]);
+
+  // 2. KPI Filters Auto-save & Hydration
+  useEffect(() => {
+    if (!currentUser) return;
+    const saved = loadUserFilterPreferences(pageUserKey, 'kpi', {
+      selectedMonth: '2026-10',
+      kpiSubTab: 'scorecard' as 'scorecard' | 'settings' | 'deliveries',
+    });
+    if (saved.selectedMonth) setSelectedMonth(saved.selectedMonth);
+    if (saved.kpiSubTab) setKpiSubTab(saved.kpiSubTab);
+  }, [pageUserKey, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    saveUserFilterPreferences(pageUserKey, 'kpi', {
+      selectedMonth,
+      kpiSubTab,
+    });
+  }, [pageUserKey, currentUser, selectedMonth, kpiSubTab]);
+
+  // 3. Reports Filter Auto-save & Hydration
+  useEffect(() => {
+    if (!currentUser) return;
+    const saved = loadUserFilterPreferences(pageUserKey, 'reports', {
+      reportMonthFilter: 'all',
+    });
+    if (saved.reportMonthFilter) setReportMonthFilter(saved.reportMonthFilter);
+  }, [pageUserKey, currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    saveUserFilterPreferences(pageUserKey, 'reports', {
+      reportMonthFilter,
+    });
+  }, [pageUserKey, currentUser, reportMonthFilter]);
+
+  const handleResetTicketFilters = async () => {
+    setTicketMonthFilter('all');
+    setTicketDeptFilter('all');
+    setTicketDesignerFilter('all');
+    setTicketSearchQuery('');
+    setTicketViewMode('board');
+    setKanbanGroupBy('stages');
+    setKanbanCardDensity('detail');
+    await resetUserFilterPreferences(pageUserKey, 'tickets');
+    showToast('Ticket filters reset to defaults');
+  };
 
   const availableTicketDepartments = useMemo(() => {
     const set = new Set<string>();
@@ -523,7 +614,6 @@ export default function RecActsFullyFunctionalApp() {
     });
     return { pts, hrs };
   }, [visibleFilteredTickets]);
-  const [reportMonthFilter, setReportMonthFilter] = useState<string>('all');
 
   const handleMonthChange = async (month: string) => {
     setSelectedMonth(month);
@@ -836,6 +926,8 @@ export default function RecActsFullyFunctionalApp() {
     }
 
     loadAllData();
+    loadZohoProjectsConfig();
+    loadZohoSchemaAndSchedule();
   }, []);
 
   // Zoho Sprints Integration & Scheduled Sync Handlers
@@ -978,6 +1070,9 @@ export default function RecActsFullyFunctionalApp() {
       if (res.ok && data.success) {
         showToast(data.message || `Synced ${data.totalSynced} tickets from Zoho Sprints!`);
         setZohoErrorMessage(null);
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('recacts_bootstrap_snapshot');
+        }
         await loadAllData();
         await loadZohoSchemaAndSchedule();
       } else {
@@ -2563,6 +2658,24 @@ export default function RecActsFullyFunctionalApp() {
                       ))}
                     </select>
                   </div>
+
+                  {/* User Filter Indicator & Reset */}
+                  <div className="flex items-center gap-1.5">
+                    <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 text-[10px] font-semibold">
+                      <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Saved for {currentUser?.name || 'you'}</span>
+                    </div>
+                    {(ticketSearchQuery || ticketDeptFilter !== 'all' || ticketDesignerFilter !== 'all' || ticketMonthFilter !== 'all') && (
+                      <button
+                        onClick={handleResetTicketFilters}
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-all flex items-center gap-1 text-xs"
+                        title="Reset ticket filters"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span className="hidden sm:inline">Reset</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -3107,72 +3220,15 @@ export default function RecActsFullyFunctionalApp() {
             ) : !hasPermission(role as FunctionalRole, 'timeline:view') ? (
               renderAccessRestricted('Timeline Restricted', 'Interactive Gantt schedules are restricted to project delivery teams and leadership.')
             ) : (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Interactive Gantt Timeline</h1>
-                  <p className="text-xs text-slate-500">
-                    Day/Week/Month timeline with planned vs actual progress, milestone overlays, and leave indicators.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/[0.08] text-xs">
-                    {(['day', 'week', 'month'] as const).map((z) => (
-                      <button
-                        key={z}
-                        onClick={() => setGanttZoom(z)}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize ${
-                          ganttZoom === z ? 'bg-white dark:bg-slate-800 text-indigo-500 shadow-xs font-semibold' : 'text-slate-400'
-                        }`}
-                      >
-                        {z} View
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gantt Visual Grid */}
-              <div className="modern-card p-6 space-y-4 overflow-x-auto">
-                {/* Header dates */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.06] text-xs font-semibold text-slate-400 min-w-[700px]">
-                  <div className="w-64">Deliverable</div>
-                  <div className="flex-1 flex justify-between px-4 font-mono">
-                    <span>2 Nov</span>
-                    <span>4 Nov</span>
-                    <span>6 Nov</span>
-                    <span className="text-indigo-400 font-bold">9 Nov (Today)</span>
-                    <span>11 Nov</span>
-                    <span className="text-amber-400">13 Nov (Demo)</span>
-                    <span>16 Nov</span>
-                    <span className="text-rose-400">20 Nov (Freeze)</span>
-                  </div>
-                </div>
-
-                {/* Timeline Bars */}
-                <div className="space-y-3 min-w-[700px]">
-                  {tickets.map((t) => (
-                    <div key={t.id} className="flex items-center gap-4 text-xs">
-                      <div className="w-64 font-mono font-bold truncate">
-                        <span className="text-indigo-500 mr-2">{t.ref}</span>
-                        <span className="font-sans font-medium text-slate-200">{t.title}</span>
-                      </div>
-                      <div className="flex-1 h-8 rounded-lg bg-slate-100 dark:bg-white/[0.04] relative flex items-center px-2">
-                        <div
-                          className="h-5 rounded-md bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center px-2 text-[10px] font-bold shadow-xs truncate cursor-pointer"
-                          style={{
-                            width: `${Math.min(100, (t.totalWeightage || 20) * 3.5)}%`,
-                          }}
-                          onClick={() => setSelectedTicket(t)}
-                        >
-                          {t.status} • {t.totalWeightage}h ({t.allocations?.map((a: any) => a.memberName).join(', ')})
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+              <InteractiveGanttView
+                tickets={tickets}
+                onSelectTicket={setSelectedTicket}
+                currentUserName={currentUser?.name}
+                currentUserId={currentUser?.userId || currentUser?.id}
+                onRefreshTickets={loadAllData}
+                onSyncZoho={() => handleSyncZoho(false)}
+                isSyncingZoho={isSyncingZoho}
+              />
             )
           )}
 
@@ -4471,6 +4527,8 @@ export default function RecActsFullyFunctionalApp() {
               <UserManagementView
                 currentRole={role}
                 onShowToast={showToast}
+                currentUserId={currentUser?.userId || currentUser?.id}
+                currentUserName={currentUser?.name}
               />
             )
           )}

@@ -5,6 +5,7 @@ import { requireTenantContext } from '@/lib/tenant';
 import { hasPermission, FunctionalRole } from '@/lib/rbac';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
+import { invalidateBootstrapCache } from '@/lib/bootstrap';
 
 export async function GET(
   req: NextRequest,
@@ -56,7 +57,22 @@ export async function PATCH(
   try {
     const { id } = params;
     const body = await req.json();
-    const { status, priority, plannedDueDate, reassignFromMemberId, reassignToMemberId, reassignHours } = body;
+    const {
+      status,
+      priority,
+      plannedStartDate,
+      plannedDueDate,
+      requirementStartDate,
+      requirementEndDate,
+      devStartDate,
+      devEndDate,
+      targetLiveDate,
+      department,
+      designer,
+      reassignFromMemberId,
+      reassignToMemberId,
+      reassignHours,
+    } = body;
 
     const ticket = await prisma.ticket.findUnique({
       where: { id },
@@ -71,7 +87,7 @@ export async function PATCH(
     // Only leads/managers/owners can modify priority, due dates, or reassignments, or edit tickets they aren't assigned to
     if (
       !canEdit &&
-      (priority || plannedDueDate || reassignFromMemberId || reassignToMemberId || reassignHours || !isAssigned)
+      (priority || plannedDueDate || plannedStartDate || requirementStartDate || requirementEndDate || devStartDate || devEndDate || targetLiveDate || reassignFromMemberId || reassignToMemberId || reassignHours || !isAssigned)
     ) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions to modify this requirement ticket' },
@@ -86,6 +102,105 @@ export async function PATCH(
     }
     if (priority) updateData.priority = priority;
     if (plannedDueDate) updateData.plannedDueDate = plannedDueDate;
+    if (plannedStartDate) updateData.plannedStartDate = plannedStartDate;
+
+    // Custom layout fields update
+    const currentCf = (ticket.customFields as any) || {};
+    const currentRaw = (ticket.rawPayload as any) || {};
+    let hasCustomFieldUpdates = false;
+
+    if (requirementStartDate !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_DATETIME10 = {
+        label: 'Requirement Start Date',
+        rawValue: requirementStartDate ? `${requirementStartDate}T00:00:00.000Z` : '',
+        displayValue: requirementStartDate ? `${requirementStartDate}T00:00:00.000Z` : '',
+        fieldType: 'Date & Time',
+        paramName: 'UDF_DATETIME10',
+      };
+      currentRaw.UDF_DATETIME10 = requirementStartDate ? `${requirementStartDate}T00:00:00.000Z` : '';
+      if (!updateData.plannedStartDate && requirementStartDate) {
+        updateData.plannedStartDate = requirementStartDate;
+      }
+    }
+
+    if (requirementEndDate !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_DATETIME6 = {
+        label: 'Requirement End Date',
+        rawValue: requirementEndDate ? `${requirementEndDate}T00:00:00.000Z` : '',
+        displayValue: requirementEndDate ? `${requirementEndDate}T00:00:00.000Z` : '',
+        fieldType: 'Date & Time',
+        paramName: 'UDF_DATETIME6',
+      };
+      currentRaw.UDF_DATETIME6 = requirementEndDate ? `${requirementEndDate}T00:00:00.000Z` : '';
+      if (!updateData.plannedDueDate && requirementEndDate) {
+        updateData.plannedDueDate = requirementEndDate;
+      }
+    }
+
+    if (devStartDate !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_DATE4 = {
+        label: 'Development Start Date',
+        rawValue: devStartDate ? `${devStartDate}T00:00:00.000Z` : '',
+        displayValue: devStartDate ? `${devStartDate}T00:00:00.000Z` : '',
+        fieldType: 'Date',
+        paramName: 'UDF_DATE4',
+      };
+      currentRaw.UDF_DATE4 = devStartDate ? `${devStartDate}T00:00:00.000Z` : '';
+    }
+
+    if (devEndDate !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_DATE3 = {
+        label: 'Development end Date',
+        rawValue: devEndDate ? `${devEndDate}T00:00:00.000Z` : '',
+        displayValue: devEndDate ? `${devEndDate}T00:00:00.000Z` : '',
+        fieldType: 'Date',
+        paramName: 'UDF_DATE3',
+      };
+      currentRaw.UDF_DATE3 = devEndDate ? `${devEndDate}T00:00:00.000Z` : '';
+    }
+
+    if (targetLiveDate !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_DATE5 = {
+        label: 'Target Live Date',
+        rawValue: targetLiveDate ? `${targetLiveDate}T00:00:00.000Z` : '',
+        displayValue: targetLiveDate ? `${targetLiveDate}T00:00:00.000Z` : '',
+        fieldType: 'Date',
+        paramName: 'UDF_DATE5',
+      };
+      currentRaw.UDF_DATE5 = targetLiveDate ? `${targetLiveDate}T00:00:00.000Z` : '';
+    }
+
+    if (department !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_PKL20 = {
+        label: 'Department',
+        rawValue: department,
+        displayValue: department,
+        fieldType: 'Picklist / Dropdown',
+        paramName: 'UDF_PKL20',
+      };
+    }
+
+    if (designer !== undefined) {
+      hasCustomFieldUpdates = true;
+      currentCf.UDF_MULTIPKL10 = {
+        label: 'Designer',
+        rawValue: designer,
+        displayValue: designer,
+        fieldType: 'Multi-Picklist',
+        paramName: 'UDF_MULTIPKL10',
+      };
+    }
+
+    if (hasCustomFieldUpdates) {
+      updateData.customFields = currentCf;
+      updateData.rawPayload = currentRaw;
+    }
 
     // Handle reassignment if requested
     if (reassignFromMemberId && reassignToMemberId && reassignHours) {
@@ -180,6 +295,8 @@ export async function PATCH(
       module: 'Tickets',
       action: `Updated ticket ${ticket.reference} (Status: ${status || ticket.status})`,
     });
+
+    invalidateBootstrapCache();
 
     return NextResponse.json({ success: true, ticket: updated });
   } catch (err) {

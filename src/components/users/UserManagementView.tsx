@@ -22,14 +22,49 @@ import {
   AlertCircle,
   HelpCircle,
   ArrowRight,
+  RotateCcw,
 } from 'lucide-react';
+import {
+  loadUserFilterPreferences,
+  saveUserFilterPreferences,
+  resetUserFilterPreferences,
+  syncUserFilterPreferencesFromServer,
+} from '@/lib/user-filters';
 
 export interface UserManagementViewProps {
   currentRole: string;
   onShowToast: (message: string) => void;
+  currentUserId?: string;
+  currentUserName?: string;
 }
 
-export function UserManagementView({ currentRole, onShowToast }: UserManagementViewProps) {
+interface UserViewFilters {
+  searchQuery: string;
+  teamFilter: string;
+  roleFilter: string;
+  statusFilter: string;
+  designerFilter: string;
+}
+
+const DEFAULT_USER_FILTERS: UserViewFilters = {
+  searchQuery: '',
+  teamFilter: 'all',
+  roleFilter: 'all',
+  statusFilter: 'all',
+  designerFilter: 'all',
+};
+
+export function UserManagementView({
+  currentRole,
+  onShowToast,
+  currentUserId,
+  currentUserName,
+}: UserManagementViewProps) {
+  const userKey = currentUserId || currentUserName || 'guest';
+  const initialSavedFilters = useMemo(() => {
+    return loadUserFilterPreferences<UserViewFilters>(userKey, 'users', DEFAULT_USER_FILTERS);
+  }, [userKey]);
+
   const [users, setUsers] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -41,11 +76,43 @@ export function UserManagementView({ currentRole, onShowToast }: UserManagementV
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [teamFilter, setTeamFilter] = useState<string>('all');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [designerFilter, setDesignerFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>(initialSavedFilters.searchQuery);
+  const [teamFilter, setTeamFilter] = useState<string>(initialSavedFilters.teamFilter);
+  const [roleFilter, setRoleFilter] = useState<string>(initialSavedFilters.roleFilter);
+  const [statusFilter, setStatusFilter] = useState<string>(initialSavedFilters.statusFilter);
+  const [designerFilter, setDesignerFilter] = useState<string>(initialSavedFilters.designerFilter);
+
+  // Auto-save user filters
+  useEffect(() => {
+    saveUserFilterPreferences(userKey, 'users', {
+      searchQuery,
+      teamFilter,
+      roleFilter,
+      statusFilter,
+      designerFilter,
+    });
+  }, [userKey, searchQuery, teamFilter, roleFilter, statusFilter, designerFilter]);
+
+  // Sync from server
+  useEffect(() => {
+    syncUserFilterPreferencesFromServer<UserViewFilters>(userKey, 'users', (serverFilters) => {
+      if (typeof serverFilters.searchQuery === 'string') setSearchQuery(serverFilters.searchQuery);
+      if (serverFilters.teamFilter) setTeamFilter(serverFilters.teamFilter);
+      if (serverFilters.roleFilter) setRoleFilter(serverFilters.roleFilter);
+      if (serverFilters.statusFilter) setStatusFilter(serverFilters.statusFilter);
+      if (serverFilters.designerFilter) setDesignerFilter(serverFilters.designerFilter);
+    });
+  }, [userKey]);
+
+  const handleResetUserFilters = async () => {
+    setSearchQuery(DEFAULT_USER_FILTERS.searchQuery);
+    setTeamFilter(DEFAULT_USER_FILTERS.teamFilter);
+    setRoleFilter(DEFAULT_USER_FILTERS.roleFilter);
+    setStatusFilter(DEFAULT_USER_FILTERS.statusFilter);
+    setDesignerFilter(DEFAULT_USER_FILTERS.designerFilter);
+    await resetUserFilterPreferences(userKey, 'users');
+    onShowToast('User filters reset to defaults');
+  };
 
   // Modals
   const [editUserModal, setEditUserModal] = useState<any | null>(null);
@@ -391,19 +458,22 @@ export function UserManagementView({ currentRole, onShowToast }: UserManagementV
           </div>
         </div>
 
-        {(searchQuery || teamFilter !== 'all' || roleFilter !== 'all' || designerFilter !== 'all') && (
-          <button
-            onClick={() => {
-              setSearchQuery('');
-              setTeamFilter('all');
-              setRoleFilter('all');
-              setDesignerFilter('all');
-            }}
-            className="text-xs text-slate-400 hover:text-white underline ml-auto"
-          >
-            Clear filters
-          </button>
-        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 text-[10px] font-semibold">
+            <Check className="w-2.5 h-2.5" />
+            <span>Saved for {currentUserName || 'you'}</span>
+          </div>
+
+          {(searchQuery || teamFilter !== 'all' || roleFilter !== 'all' || designerFilter !== 'all') && (
+            <button
+              onClick={handleResetUserFilters}
+              className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-medium transition-colors"
+              title="Reset user filters"
+            >
+              <RotateCcw className="w-3 h-3" /> Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Users Table */}

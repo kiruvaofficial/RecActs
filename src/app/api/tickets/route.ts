@@ -4,7 +4,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
-import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
+import { resolveZohoDesignerValue, extractIndividualDesigners, resolveTicketReference } from '@/lib/zoho-designer-resolver';
+
+function parseZohoDate(val: any): string | null {
+  if (!val || val === '-1' || val === -1) return null;
+  let d: Date;
+  if (typeof val === 'number') {
+    d = new Date(val);
+  } else if (typeof val === 'string' && /^\d{10,13}$/.test(val.trim())) {
+    const num = Number(val.trim());
+    d = new Date(num > 9999999999 ? num : num * 1000);
+  } else {
+    d = new Date(val);
+  }
+  if (isNaN(d.getTime())) {
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.substring(0, 10);
+    return null;
+  }
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
 
 export async function GET(req: NextRequest) {
   const { error, context } = await requireTenantContext();
@@ -49,8 +67,25 @@ export async function GET(req: NextRequest) {
         (t.customFields as any)?.UDF_MULTIPKL10?.rawValue ||
         (t.customFields as any)?.UDF_PKL15?.displayValue ||
         (t.customFields as any)?.UDF_PKL15?.rawValue ||
+        (t.rawPayload as any)?.UDF_MULTIPKL10 ||
+        (t.rawPayload as any)?.UDF_PKL15 ||
         null;
       const resolvedDesigner = rawDesigner ? resolveZohoDesignerValue(rawDesigner) : null;
+      const designersList = rawDesigner ? extractIndividualDesigners(rawDesigner) : [];
+
+      const cf = (t.customFields as any) || {};
+      const raw = (t.rawPayload as any) || {};
+
+      const reqStart = parseZohoDate(cf.UDF_DATETIME10?.rawValue || cf.UDF_DATETIME10?.displayValue || raw.UDF_DATETIME10 || cf.UDF_DATE10?.rawValue || raw.UDF_DATE10)
+        || parseZohoDate(t.plannedStartDate);
+      const reqEnd = parseZohoDate(cf.UDF_DATETIME6?.rawValue || cf.UDF_DATETIME6?.displayValue || raw.UDF_DATETIME6 || cf.UDF_DATE6?.rawValue || raw.UDF_DATE6)
+        || parseZohoDate(t.plannedDueDate);
+      const devStart = parseZohoDate(cf.UDF_DATE4?.rawValue || cf.UDF_DATE4?.displayValue || raw.UDF_DATE4);
+      const devEnd = parseZohoDate(cf.UDF_DATE3?.rawValue || cf.UDF_DATE3?.displayValue || raw.UDF_DATE3);
+      const targetLive = parseZohoDate(cf.UDF_DATE5?.rawValue || cf.UDF_DATE5?.displayValue || raw.UDF_DATE5);
+      const actualLive = parseZohoDate(cf.UDF_DATETIME8?.rawValue || cf.UDF_DATETIME8?.displayValue || raw.UDF_DATETIME8);
+      const testingStart = parseZohoDate(cf.UDF_DATE1?.rawValue || cf.UDF_DATE1?.displayValue || raw.UDF_DATE1);
+      const testingEnd = parseZohoDate(cf.UDF_DATE2?.rawValue || cf.UDF_DATE2?.displayValue || raw.UDF_DATE2);
 
       return {
         id: t.id,
@@ -65,12 +100,21 @@ export async function GET(req: NextRequest) {
         customFields: t.customFields,
         department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
         designer: resolvedDesigner,
+        designers: designersList.length > 0 ? designersList : (resolvedDesigner ? [resolvedDesigner] : []),
         developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
         prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
         docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
         rawPayload: t.rawPayload,
         plannedStart: t.plannedStartDate,
         plannedDue: t.plannedDueDate,
+        requirementStartDate: reqStart,
+        requirementEndDate: reqEnd,
+        devStartDate: devStart,
+        devEndDate: devEnd,
+        targetLiveDate: targetLive,
+        actualLiveDate: actualLive,
+        testingStartDate: testingStart,
+        testingEndDate: testingEnd,
         totalWeightage: t.totalEstimatedHours,
         teamName: t.team?.name || 'Alpha',
         reassignmentCount: t.reassignmentCount,

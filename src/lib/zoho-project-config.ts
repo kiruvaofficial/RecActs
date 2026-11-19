@@ -36,13 +36,14 @@ export const KNOWN_ZOHO_PROJECTS: ZohoProjectItem[] = [
   { id: "101301000000509437", name: "Homefair", prefix: "HF" },
   { id: "101301000000436327", name: "DB - Update", prefix: "DB" },
   { id: "101301000000010327", name: "Ecommerce", prefix: "ECM" },
-  { id: "101301000000010271", name: "Version 4 in progress", prefix: "V4" },
+  { id: "101301000000010271", name: "Version 4 in progress", prefix: "V4", isKnownDefault: true },
   { id: "101301000000010223", name: "Version 3 PHP", prefix: "V3" },
 ];
 
 const CONFIG_FILE_PATH = path.resolve(process.cwd(), '.zoho-sync-projects.json');
 
 const DEFAULT_SELECTED_IDS = [
+  "101301000000010271", // Version 4 in progress
   "101301000000105539", // Requirements in progress
   "101301000007065415", // AI Agentic team
   "101301000006534930", // Fabritec LLC

@@ -4,6 +4,7 @@
  */
 
 export const KNOWN_ZOHO_DESIGNERS: Record<string, string> = {
+  // UDF_MULTIPKL10 Option IDs
   '101301000007403154': 'Karuppaiah S',
   '101301000007403153': 'Hemanth Akassh B',
   '101301000004576327': 'Yogesh R',
@@ -13,6 +14,16 @@ export const KNOWN_ZOHO_DESIGNERS: Record<string, string> = {
   '101301000004953269': 'Dharshana T',
   '101301000004576333': 'Dinesh Yadav',
   '101301000005027815': 'Madhan R',
+
+  // UDF_PKL15 (Designer-old) Option IDs
+  '101301000006615491': 'Yogesh R',
+  '101301000006615492': 'Saravanapriya M',
+  '101301000006615493': 'Sarath Kumar',
+  '101301000006615494': 'Dharshana T',
+  '101301000006615495': 'Dinesh Yadav',
+  '101301000007096376': 'Hemanth Akassh B',
+  '101301000007096377': 'Madhan R',
+  '101301000007096378': 'Karuppaiah S',
 };
 
 /**
