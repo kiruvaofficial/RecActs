@@ -7,22 +7,15 @@ import prisma from '@/lib/prisma';
 import { requireTenantContext } from '@/lib/tenant';
 import { logAuditEvent } from '@/lib/audit';
 import { invalidateBootstrapCache } from '@/lib/bootstrap';
+import { KNOWN_ZOHO_DESIGNERS } from '@/lib/zoho-designer-resolver';
 
 const ALLOWED_ROLES = ['lead', 'manager', 'hr', 'owner', 'god'];
 const SCHEMA_STORE_PATH = path.resolve(process.cwd(), '.zoho-custom-fields-schema.json');
 
 function getZohoDesignerFieldData(designerParamName: string = 'UDF_MULTIPKL10') {
-  let designerOptions: Array<{ id: string; name: string }> = [
-    { id: '101301000007403154', name: 'Karuppaiah S' },
-    { id: '101301000007403153', name: 'Hemanth Akassh B' },
-    { id: '101301000004576327', name: 'Yogesh R' },
-    { id: '101301000007403152', name: 'Srinath P' },
-    { id: '101301000004576329', name: 'Saravanapriya M' },
-    { id: '101301000004576331', name: 'Sarath Kumar' },
-    { id: '101301000004953269', name: 'Dharshana T' },
-    { id: '101301000004576333', name: 'Dinesh Yadav' },
-    { id: '101301000005027815', name: 'Madhan R' },
-  ];
+  let designerOptions: Array<{ id: string; name: string }> = Object.entries(KNOWN_ZOHO_DESIGNERS).map(
+    ([id, name]) => ({ id, name })
+  );
   let availableFields: Array<{ paramName: string; fieldName: string; fieldTypeName: string }> = [];
 
   try {

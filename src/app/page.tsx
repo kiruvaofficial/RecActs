@@ -74,6 +74,7 @@ import {
 } from '@/components/Skeletons';
 import { ZohoIntegrationView } from '@/components/zoho/ZohoIntegrationView';
 import { UserManagementView } from '@/components/users/UserManagementView';
+import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 
 export default function RecActsFullyFunctionalApp() {
   // Navigation & Role State
@@ -230,8 +231,14 @@ export default function RecActsFullyFunctionalApp() {
   const availableTicketDesigners = useMemo(() => {
     const set = new Set<string>();
     tickets.forEach((t: any) => {
-      if (t.designer && typeof t.designer === 'string' && t.designer.trim()) {
-        set.add(t.designer.trim());
+      const resolved = resolveZohoDesignerValue(t.designer);
+      if (resolved && typeof resolved === 'string' && resolved.trim()) {
+        resolved.split(',').forEach((name: string) => {
+          const trimmed = name.trim();
+          if (trimmed && trimmed.toLowerCase() !== 'unassigned') {
+            set.add(trimmed);
+          }
+        });
       }
     });
     return Array.from(set).sort();
@@ -257,10 +264,11 @@ export default function RecActsFullyFunctionalApp() {
 
       // 3. Designer filter (UDF_MULTIPKL10)
       if (ticketDesignerFilter !== 'all') {
+        const resolvedDesigner = resolveZohoDesignerValue(t.designer);
         if (ticketDesignerFilter === 'unassigned') {
-          if (t.designer && t.designer.trim()) return false;
+          if (resolvedDesigner && resolvedDesigner.trim()) return false;
         } else {
-          if (!t.designer || !t.designer.toLowerCase().includes(ticketDesignerFilter.toLowerCase())) return false;
+          if (!resolvedDesigner || !resolvedDesigner.toLowerCase().includes(ticketDesignerFilter.toLowerCase())) return false;
         }
       }
 
@@ -270,7 +278,7 @@ export default function RecActsFullyFunctionalApp() {
         const matchRef = t.ref?.toLowerCase().includes(q);
         const matchTitle = t.title?.toLowerCase().includes(q);
         const matchCust = t.customer?.toLowerCase().includes(q);
-        const matchDes = t.designer?.toLowerCase().includes(q);
+        const matchDes = resolveZohoDesignerValue(t.designer)?.toLowerCase().includes(q);
         const matchDept = t.department?.toLowerCase().includes(q);
         if (!matchRef && !matchTitle && !matchCust && !matchDes && !matchDept) return false;
       }
@@ -2832,7 +2840,7 @@ export default function RecActsFullyFunctionalApp() {
                                       <div className="flex items-center gap-1.5 min-w-0">
                                         <Zap className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400/20 flex-shrink-0" />
                                         <span className="font-mono text-xs font-bold text-sky-400 hover:text-sky-300 hover:underline truncate">
-                                          {t.ref}
+                                          {resolveTicketReference(t.ref, t.title)}
                                         </span>
                                       </div>
 
@@ -2848,19 +2856,32 @@ export default function RecActsFullyFunctionalApp() {
                                         >
                                           {t.priority}
                                         </span>
-                                        {t.designer && (
-                                          <span
-                                            className="w-5 h-5 rounded-full bg-pink-500/20 border border-pink-500/30 text-[9px] font-bold text-pink-300 flex items-center justify-center flex-shrink-0"
-                                            title={`Designer: ${t.designer}`}
-                                          >
-                                            {t.designer
-                                              .split(' ')
-                                              .map((n: string) => n[0])
-                                              .join('')
-                                              .slice(0, 2)
-                                              .toUpperCase()}
-                                          </span>
-                                        )}
+                                        {t.designer && (() => {
+                                          const resolved = resolveZohoDesignerValue(t.designer);
+                                          const desList = resolved.split(',').map((s: string) => s.trim()).filter(Boolean);
+                                          return (
+                                            <div className="flex items-center -space-x-1.5 flex-shrink-0" title={`Designer: ${resolved}`}>
+                                              {desList.map((dName: string, dIdx: number) => {
+                                                const initials = dName
+                                                  .split(' ')
+                                                  .filter(Boolean)
+                                                  .map((n: string) => n[0])
+                                                  .join('')
+                                                  .slice(0, 2)
+                                                  .toUpperCase() || 'DE';
+                                                return (
+                                                  <span
+                                                    key={dIdx}
+                                                    className="w-5 h-5 rounded-full bg-pink-500/20 border border-pink-500/30 text-[9px] font-bold text-pink-300 flex items-center justify-center flex-shrink-0 shadow-sm"
+                                                    title={`Designer: ${dName}`}
+                                                  >
+                                                    {initials}
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
 
@@ -2892,9 +2913,12 @@ export default function RecActsFullyFunctionalApp() {
                                             </span>
                                           )}
                                           {t.designer && (
-                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                                              <Palette className="w-2.5 h-2.5" />
-                                              <span className="truncate max-w-[110px]">{t.designer}</span>
+                                            <span
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20"
+                                              title={`Designer: ${resolveZohoDesignerValue(t.designer)}`}
+                                            >
+                                              <Palette className="w-2.5 h-2.5 flex-shrink-0" />
+                                              <span className="truncate max-w-[130px]">{resolveZohoDesignerValue(t.designer)}</span>
                                             </span>
                                           )}
                                           {t.prototypeUrl && (
@@ -3014,7 +3038,7 @@ export default function RecActsFullyFunctionalApp() {
                               onClick={() => setSelectedTicket(t)}
                               className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
                             >
-                              <td className="py-3 px-4 font-mono font-bold text-indigo-500 whitespace-nowrap">{t.ref}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-indigo-500 whitespace-nowrap">{resolveTicketReference(t.ref, t.title)}</td>
                               <td className="py-3 px-4 max-w-xs">
                                 <p className="font-semibold text-slate-900 dark:text-white truncate">{t.title}</p>
                                 <p className="text-[11px] text-slate-400 truncate">{t.customer}</p>
@@ -3031,7 +3055,7 @@ export default function RecActsFullyFunctionalApp() {
                               <td className="py-3 px-4 whitespace-nowrap">
                                 {t.designer ? (
                                   <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                                    {t.designer}
+                                    {resolveZohoDesignerValue(t.designer)}
                                   </span>
                                 ) : (
                                   <span className="text-slate-500 text-[10px]">Unassigned</span>
@@ -4784,7 +4808,7 @@ export default function RecActsFullyFunctionalApp() {
           <div className="modern-card max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.06]">
               <div>
-                <span className="font-mono text-xs font-bold text-indigo-400">{selectedTicket.ref}</span>
+                <span className="font-mono text-xs font-bold text-indigo-400">{resolveTicketReference(selectedTicket.ref, selectedTicket.title)}</span>
                 <h3 className="font-bold text-base">{selectedTicket.title}</h3>
               </div>
               <button onClick={() => setSelectedTicket(null)} className="text-slate-400 hover:text-white">

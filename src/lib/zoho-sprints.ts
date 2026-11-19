@@ -6,6 +6,7 @@ import { invalidateBootstrapCache } from '@/lib/bootstrap';
 import { getSelectedProjectIds, KNOWN_ZOHO_PROJECTS } from '@/lib/zoho-project-config';
 import { saveRawZohoItems, saveDiscoveredCustomFields, ZohoCustomFieldDefinition } from '@/lib/zoho-raw-store';
 import { recordSyncCompletion } from '@/lib/zoho-schedule';
+import { KNOWN_ZOHO_DESIGNERS, resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 
 export interface ZohoSprintsConfig {
   clientId?: string;
@@ -466,6 +467,11 @@ async function fetchProjectCustomFieldsSchema(
     optionIdToName: new Map(),
   };
 
+  // Pre-populate with known Zoho designer option IDs to names
+  for (const [optId, optName] of Object.entries(KNOWN_ZOHO_DESIGNERS)) {
+    schema.optionIdToName.set(optId, optName);
+  }
+
   try {
     const res = await fetch(
       `${baseUrl}/team/${portalId}/projects/${projectId}/modules/101301000000002027/?action=formfields`,
@@ -794,14 +800,23 @@ function processRawItems(
 
   for (const raw of items) {
     // 1. Reference ID
-    let reference = '';
-    if (raw.itemNo) {
-      reference = `REQ-I${raw.itemNo}`;
-    } else {
+    const rawTitle = (raw.itemName || raw.item_name || raw.summary || raw.name || raw.title || '').trim();
+    const rawItemNo = raw.itemNo ? String(raw.itemNo).trim() : '';
+    const projPrefix =
+      raw.prefix ||
+      raw.item_prefix ||
+      raw.project_prefix ||
+      KNOWN_ZOHO_PROJECTS.find((p) => p.name === projectName)?.prefix ||
+      'LA-I';
+    let reference = resolveTicketReference(
+      rawItemNo ? (projPrefix.endsWith('-') ? `${projPrefix}${rawItemNo}` : `${projPrefix}-${rawItemNo}`) : '',
+      rawTitle,
+      rawItemNo
+    );
+
+    if (!reference) {
       const rawId = raw.id || raw.item_id || raw.seq_id || raw.itemId;
-      const prefix = raw.prefix || raw.item_prefix || raw.project_prefix || 'REQ';
-      const seq = raw.seq_id || raw.seqId || raw.sequence_id;
-      reference = prefix && seq ? `${prefix}-${seq}` : rawId ? `REQ-I${rawId}` : '';
+      reference = rawId ? `LA-I${rawId}` : '';
     }
 
     if (!reference) continue;
@@ -879,14 +894,33 @@ function processRawItems(
         const label = def?.fieldName || k;
         const fieldType = def?.fieldTypeName || mapZohoFieldType(0, k);
 
-        let displayValue = String(val);
+        const resolveToken = (t: string): string => {
+          const trimmed = t.trim();
+          if (schema?.optionIdToName.has(trimmed)) {
+            return schema.optionIdToName.get(trimmed)!;
+          }
+          if (KNOWN_ZOHO_DESIGNERS[trimmed]) {
+            return KNOWN_ZOHO_DESIGNERS[trimmed];
+          }
+          return trimmed;
+        };
+
+        let displayValue = '';
         if (Array.isArray(val)) {
           displayValue = val
-            .map((v) => schema?.optionIdToName.get(String(v)) || String(v))
+            .flatMap((v) => String(v).split(',').map(resolveToken))
             .filter(Boolean)
             .join(', ');
-        } else if (typeof val === 'string' && schema?.optionIdToName.has(val)) {
-          displayValue = schema.optionIdToName.get(val) || val;
+        } else if (typeof val === 'string' && val.includes(',')) {
+          displayValue = val
+            .split(',')
+            .map(resolveToken)
+            .filter(Boolean)
+            .join(', ');
+        } else if (typeof val === 'string') {
+          displayValue = resolveToken(val);
+        } else {
+          displayValue = String(val);
         }
 
         resolvedCustomFields[k] = {
@@ -1015,28 +1049,42 @@ export async function syncZohoTicketsToRecActs(
       const chunk = fetched.slice(i, i + concurrency);
       await Promise.all(
         chunk.map(async (item) => {
-          let matchedMember = null;
-          const ticketDesigner =
+          const matchedMembers: typeof members = [];
+          const rawTicketDesigner =
             (item.customFields as any)?.[designerParam]?.displayValue ||
             (item.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
             (item.customFields as any)?.UDF_PKL15?.displayValue;
+          const ticketDesigner = rawTicketDesigner ? resolveZohoDesignerValue(rawTicketDesigner) : null;
 
           if (ticketDesigner) {
-            const dLower = String(ticketDesigner).toLowerCase().trim();
-            matchedMember = members.find((m) => {
-              if (m.zohoDesignerName && dLower.includes(m.zohoDesignerName.toLowerCase())) return true;
-              const uName = m.user.name.toLowerCase();
-              return dLower.includes(uName) || uName.includes(dLower);
-            });
+            const desNames = ticketDesigner
+              .split(',')
+              .map((s) => s.trim().toLowerCase())
+              .filter(Boolean);
+
+            for (const dName of desNames) {
+              const found = members.find((m) => {
+                const zDes = (m.zohoDesignerName || '').toLowerCase().trim();
+                const uName = m.user.name.toLowerCase().trim();
+                return (
+                  (zDes && (dName === zDes || dName.includes(zDes) || zDes.includes(dName))) ||
+                  (dName === uName || dName.includes(uName) || uName.includes(dName))
+                );
+              });
+              if (found && !matchedMembers.some((mm) => mm.id === found.id)) {
+                matchedMembers.push(found);
+              }
+            }
           }
 
-          if (!matchedMember && item.assigneeName && item.assigneeName.trim()) {
+          if (matchedMembers.length === 0 && item.assigneeName && item.assigneeName.trim()) {
             const rawLower = item.assigneeName.toLowerCase().trim();
-            matchedMember = members.find((m) => {
+            const found = members.find((m) => {
               if (m.zohoDesignerName && rawLower.includes(m.zohoDesignerName.toLowerCase())) return true;
               const userName = m.user.name.toLowerCase();
               return userName.includes(rawLower) || rawLower.includes(userName) || (m.user.initials && m.user.initials.toLowerCase() === rawLower);
             });
+            if (found) matchedMembers.push(found);
           }
 
           // Check if ticket already exists in PostgreSQL (match REQ-I*, LA-I*, or LA-*)
@@ -1073,25 +1121,28 @@ export async function syncZohoTicketsToRecActs(
               },
             });
 
-            // Sync assignment if member found and not already assigned
-            if (matchedMember) {
-              await prisma.ticketAssignment.upsert({
-                where: {
-                  ticketId_membershipId: {
-                    ticketId: existing.id,
-                    membershipId: matchedMember.id,
+            // Sync assignments for all matched designers
+            if (matchedMembers.length > 0) {
+              const shareHours = Math.round((item.totalEstimatedHours / matchedMembers.length) * 10) / 10;
+              for (const m of matchedMembers) {
+                await prisma.ticketAssignment.upsert({
+                  where: {
+                    ticketId_membershipId: {
+                      ticketId: existing.id,
+                      membershipId: m.id,
+                    },
                   },
-                },
-                update: {
-                  allocatedHours: item.totalEstimatedHours,
-                },
-                create: {
-                  ticketId: existing.id,
-                  membershipId: matchedMember.id,
-                  allocatedHours: item.totalEstimatedHours,
-                  loggedHours: 0,
-                },
-              });
+                  update: {
+                    allocatedHours: shareHours,
+                  },
+                  create: {
+                    ticketId: existing.id,
+                    membershipId: m.id,
+                    allocatedHours: shareHours,
+                    loggedHours: 0,
+                  },
+                });
+              }
             }
 
             updatedCount++;
@@ -1119,15 +1170,18 @@ export async function syncZohoTicketsToRecActs(
               },
             });
 
-            if (matchedMember) {
-              await prisma.ticketAssignment.create({
-                data: {
-                  ticketId: created.id,
-                  membershipId: matchedMember.id,
-                  allocatedHours: item.totalEstimatedHours,
-                  loggedHours: 0,
-                },
-              });
+            if (matchedMembers.length > 0) {
+              const shareHours = Math.round((item.totalEstimatedHours / matchedMembers.length) * 10) / 10;
+              for (const m of matchedMembers) {
+                await prisma.ticketAssignment.create({
+                  data: {
+                    ticketId: created.id,
+                    membershipId: m.id,
+                    allocatedHours: shareHours,
+                    loggedHours: 0,
+                  },
+                });
+              }
             }
 
             createdCount++;

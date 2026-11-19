@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { processAutoAttendance } from '@/lib/auto-attendance';
+import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 import {
   calculateDepartmentKpi,
   calculateTicketDeduction,
@@ -440,7 +441,7 @@ export async function getBootstrapData({
   // Format Tickets
   const ticketsFormatted = allOrgTickets.map((t) => ({
     id: t.id,
-    ref: t.reference,
+    ref: resolveTicketReference(t.reference, t.title, (t.rawPayload as any)?.itemNo),
     title: t.title,
     description: t.description,
     customer: t.customerName,
@@ -460,18 +461,27 @@ export async function getBootstrapData({
       loggedHours: a.loggedHours,
       status: a.status,
     })),
-    dependencies: t.dependencies.map((d) => d.dependsOn.reference),
+    dependencies: t.dependencies.map((d) => resolveTicketReference(d.dependsOn.reference, d.dependsOn.title)),
     hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
     customFields: t.customFields,
     department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
-    designer: (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue || (t.customFields as any)?.UDF_MULTIPKL10?.displayValue || (t.customFields as any)?.UDF_PKL15?.displayValue || null,
+    designer:
+      resolveZohoDesignerValue(
+        (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue ||
+        (t.customFields as any)?.[(org as any)?.zohoDesignerField || 'UDF_MULTIPKL10']?.rawValue ||
+        (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
+        (t.customFields as any)?.UDF_MULTIPKL10?.rawValue ||
+        (t.customFields as any)?.UDF_PKL15?.displayValue ||
+        (t.customFields as any)?.UDF_PKL15?.rawValue ||
+        null
+      ) || null,
     developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
     rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || (t.rawPayload as any)?.status_details?.status_name || t.status,
     itemType: (t.rawPayload as any)?.itemTypeName || (t.rawPayload as any)?.item_type_name || (t.rawPayload as any)?.type || 'Requirement',
     prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
     docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
     points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
-    itemNo: (t.rawPayload as any)?.itemNo || t.reference.replace('REQ-I', ''),
+    itemNo: (t.rawPayload as any)?.itemNo || t.reference.replace(/^[A-Z]+-I?/i, ''),
     requirementStartDate: t.plannedStartDate,
     requirementEndDate: t.plannedDueDate,
     history: t.history || [],

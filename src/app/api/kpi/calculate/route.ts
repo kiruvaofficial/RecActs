@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
+import { resolveZohoDesignerValue } from '@/lib/zoho-designer-resolver';
 import {
   calculateDepartmentKpi,
   calculateTargetWeightage,
@@ -177,7 +178,11 @@ export async function GET(req: NextRequest) {
       const designerName = (m.zohoDesignerName || m.user.name).toLowerCase();
       const additionalTickets = allOrgTickets.filter((t) => {
         if (directAssignments.some((da) => da.ticketId === t.id)) return false;
-        const tDes = String((t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue || '').toLowerCase();
+        const rawDes = (t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue ||
+          (t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.rawValue ||
+          (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
+          (t.customFields as any)?.UDF_PKL15?.displayValue || '';
+        const tDes = resolveZohoDesignerValue(rawDes).toLowerCase();
         return tDes && (tDes === designerName || tDes.includes(designerName.split(' ')[0]));
       });
 
@@ -263,7 +268,12 @@ export async function GET(req: NextRequest) {
     // Format all tickets for the drilldown table
     const ticketsList = allOrgTickets.map((t) => {
       const primaryAssignee = t.assignments[0];
-      const assigneeName = primaryAssignee?.membership.user.name || (t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue || 'Unassigned';
+      const rawDes = (t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.displayValue ||
+        (t.customFields as any)?.[org?.zohoDesignerField || 'UDF_MULTIPKL10']?.rawValue ||
+        (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
+        (t.customFields as any)?.UDF_PKL15?.displayValue;
+      const resolvedDes = rawDes ? resolveZohoDesignerValue(rawDes) : null;
+      const assigneeName = primaryAssignee?.membership.user.name || resolvedDes || 'Unassigned';
       const est = t.totalEstimatedHours;
       const act = primaryAssignee?.loggedHours || est;
       const reassign = t.reassignmentCount;

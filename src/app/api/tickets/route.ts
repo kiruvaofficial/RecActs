@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
+import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 
 export async function GET(req: NextRequest) {
   const { error, context } = await requireTenantContext();
@@ -34,36 +35,59 @@ export async function GET(req: NextRequest) {
       orderBy: { plannedDueDate: 'asc' },
     });
 
-    const formatted = tickets.map((t) => ({
-      id: t.id,
-      ref: t.reference,
-      title: t.title,
-      description: t.description,
-      customer: t.customerName,
-      priority: t.priority,
-      status: t.status,
-      rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status,
-      points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
-      customFields: t.customFields,
-      rawPayload: t.rawPayload,
-      plannedStart: t.plannedStartDate,
-      plannedDue: t.plannedDueDate,
-      totalWeightage: t.totalEstimatedHours,
-      teamName: t.team?.name || 'Alpha',
-      reassignmentCount: t.reassignmentCount,
-      allocations: t.assignments.map((a) => ({
-        id: a.id,
-        memberId: a.membershipId,
-        memberName: a.membership.user.name,
-        memberInitials: a.membership.user.initials,
-        allocatedHours: a.allocatedHours,
-        loggedHours: a.loggedHours,
-        status: a.status,
-      })),
-      dependencies: t.dependencies.map((d) => d.dependsOn.reference),
-      hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
-      history: t.history,
-    }));
+    const org = await prisma.organization.findUnique({
+      where: { id: context.organizationId },
+      select: { zohoDesignerField: true },
+    });
+    const designerField = org?.zohoDesignerField || 'UDF_MULTIPKL10';
+
+    const formatted = tickets.map((t) => {
+      const rawDesigner =
+        (t.customFields as any)?.[designerField]?.displayValue ||
+        (t.customFields as any)?.[designerField]?.rawValue ||
+        (t.customFields as any)?.UDF_MULTIPKL10?.displayValue ||
+        (t.customFields as any)?.UDF_MULTIPKL10?.rawValue ||
+        (t.customFields as any)?.UDF_PKL15?.displayValue ||
+        (t.customFields as any)?.UDF_PKL15?.rawValue ||
+        null;
+      const resolvedDesigner = rawDesigner ? resolveZohoDesignerValue(rawDesigner) : null;
+
+      return {
+        id: t.id,
+        ref: resolveTicketReference(t.reference, t.title, (t.rawPayload as any)?.itemNo),
+        title: t.title,
+        description: t.description,
+        customer: t.customerName,
+        priority: t.priority,
+        status: t.status,
+        rawStatusName: (t.rawPayload as any)?.statusName || (t.rawPayload as any)?.status_name || t.status,
+        points: (t.rawPayload as any)?.points !== undefined && (t.rawPayload as any)?.points !== null ? Number((t.rawPayload as any).points) : 0,
+        customFields: t.customFields,
+        department: (t.customFields as any)?.UDF_PKL20?.displayValue || null,
+        designer: resolvedDesigner,
+        developers: (t.customFields as any)?.UDF_MULTIPKL1?.displayValue || null,
+        prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
+        docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
+        rawPayload: t.rawPayload,
+        plannedStart: t.plannedStartDate,
+        plannedDue: t.plannedDueDate,
+        totalWeightage: t.totalEstimatedHours,
+        teamName: t.team?.name || 'Alpha',
+        reassignmentCount: t.reassignmentCount,
+        allocations: t.assignments.map((a) => ({
+          id: a.id,
+          memberId: a.membershipId,
+          memberName: a.membership.user.name,
+          memberInitials: a.membership.user.initials,
+          allocatedHours: a.allocatedHours,
+          loggedHours: a.loggedHours,
+          status: a.status,
+        })),
+        dependencies: t.dependencies.map((d) => resolveTicketReference(d.dependsOn.reference, d.dependsOn.title)),
+        hasBlocker: t.blockers.some((b) => b.status !== 'Resolved'),
+        history: t.history,
+      };
+    });
 
     return NextResponse.json({ tickets: formatted });
   } catch (err) {

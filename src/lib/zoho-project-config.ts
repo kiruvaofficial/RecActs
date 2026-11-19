@@ -11,7 +11,7 @@ export interface ZohoProjectItem {
 }
 
 export const KNOWN_ZOHO_PROJECTS: ZohoProjectItem[] = [
-  { id: "101301000000105539", name: "Requirements in progress", prefix: "REQ", isKnownDefault: true },
+  { id: "101301000000105539", name: "Requirements in progress", prefix: "LA-I", isKnownDefault: true },
   { id: "101301000007065415", name: "AI Agentic team", prefix: "AGT", isKnownDefault: true },
   { id: "101301000006534930", name: "Fabritec LLC", prefix: "FAB", isKnownDefault: true },
   { id: "101301000005400082", name: "Apollo Blinds", prefix: "APO" },
