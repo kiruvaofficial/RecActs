@@ -115,6 +115,29 @@ export const ZohoIntegrationView: React.FC<ZohoIntegrationViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'projects' | 'schema' | 'schedule' | 'auth'>('projects');
   const [schemaViewMode, setSchemaViewMode] = useState<'custom_layouts' | 'all_raw'>('custom_layouts');
   const [selectedFieldForOptions, setSelectedFieldForOptions] = useState<any | null>(null);
+  const [currentOrigin, setCurrentOrigin] = useState<string>('');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setCurrentOrigin(window.location.origin);
+    }
+  }, []);
+
+  const redirectUri = currentOrigin
+    ? `${currentOrigin}/oauth/callback`
+    : 'https://rec-acts.vercel.app/oauth/callback';
+
+  const accountsDomain =
+    zohoRegionInput === 'in'
+      ? 'https://accounts.zoho.in'
+      : zohoRegionInput === 'eu'
+      ? 'https://accounts.zoho.eu'
+      : zohoRegionInput === 'au'
+      ? 'https://accounts.zoho.com.au'
+      : 'https://accounts.zoho.com';
+
+  const effectiveClientId = (zohoClientIdInput && zohoClientIdInput.trim()) || '1000.O1OL92CNYEKKMU9P7ABHC4NNR9XJCP';
+  const zohoAuthUrl = `${accountsDomain}/oauth/v2/auth?scope=ZohoSprints.fullaccess.ALL&client_id=${effectiveClientId}&response_type=code&access_type=offline&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=consent`;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -815,13 +838,40 @@ export const ZohoIntegrationView: React.FC<ZohoIntegrationViewProps> = ({
               <p className="text-xs text-slate-300 leading-relaxed">
                 Authorize RecActs with your registered Zoho Client (<strong>Kiru&apos;s BM Dashboard</strong>). Zoho will display a consent dialog; clicking &ldquo;Accept&rdquo; will automatically redirect to <code className="bg-black/30 px-1 py-0.5 rounded text-indigo-300 font-mono">/oauth/callback</code>, exchange the token, and save it permanently.
               </p>
-              <a
-                href="https://accounts.zoho.com/oauth/v2/auth?scope=ZohoSprints.fullaccess.ALL&client_id=1000.O1OL92CNYEKKMU9P7ABHC4NNR9XJCP&response_type=code&access_type=offline&redirect_uri=http://localhost:3000/oauth/callback&prompt=consent"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors shadow-sm shadow-indigo-600/30"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Authorize with Zoho (Kiru&apos;s BM Dashboard)</span>
-              </a>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+                <a
+                  href={zohoAuthUrl}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors shadow-sm shadow-indigo-600/30 cursor-pointer w-fit"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Authorize with Zoho (Kiru&apos;s BM Dashboard)</span>
+                </a>
+                <div className="flex items-center gap-2 text-[11px] text-slate-300 bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 w-fit">
+                  <span className="text-slate-400">Callback:</span>
+                  <code className="text-indigo-300 font-mono select-all">{redirectUri}</code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof navigator !== 'undefined') {
+                        navigator.clipboard.writeText(redirectUri);
+                        onShowToast('Copied callback URL to clipboard!');
+                      }
+                    }}
+                    className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="Copy Callback URL"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-slate-300 space-y-1">
+                <p className="font-semibold text-indigo-300">💡 Important for Deployed App (Vercel):</p>
+                <p>
+                  Ensure <code className="bg-black/40 px-1 py-0.5 rounded text-indigo-200 font-mono">{redirectUri}</code> is registered under <strong>Authorized Redirect URIs</strong> for Client <code className="bg-black/40 px-1 py-0.5 rounded text-indigo-200 font-mono">{effectiveClientId}</code> in the <a href="https://api-console.zoho.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline font-semibold">Zoho API Console</a>.
+                </p>
+              </div>
             </div>
 
             {/* Option B: Self Client Code */}

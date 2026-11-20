@@ -15,6 +15,7 @@ export interface ZohoSprintsConfig {
   accessToken?: string;
   portalId?: string;
   region?: 'us' | 'in' | 'eu' | 'au';
+  redirectUri?: string;
 }
 
 const REGION_DOMAINS: Record<string, { accounts: string; api: string }> = {
@@ -184,11 +185,22 @@ export async function getActiveZohoAccessToken(overrideConfig?: ZohoSprintsConfi
   }
 
   const debugLogs: string[] = [];
-  const redirectUrisToTry = [
+  const redirectUrisToTry: string[] = [];
+  if (overrideConfig?.redirectUri) {
+    redirectUrisToTry.push(overrideConfig.redirectUri);
+  }
+  if (process.env.NEXTAUTH_URL) {
+    redirectUrisToTry.push(`${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/oauth/callback`);
+  }
+  if (process.env.VERCEL_URL) {
+    redirectUrisToTry.push(`https://${process.env.VERCEL_URL.replace(/\/$/, '')}/oauth/callback`);
+  }
+  redirectUrisToTry.push(
+    'https://rec-acts.vercel.app/oauth/callback',
     'http://localhost:3000/oauth/callback',
     'http://localhost:3000',
-    '',
-  ];
+    ''
+  );
 
   // 1. If explicit access token passed or token looks like direct access_token (test directly)
   if (refreshToken && refreshToken.length > 20) {

@@ -21,10 +21,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Attempt exchange with the code
+    // Attempt exchange with the code using the exact redirect URI matching this request
+    const callbackRedirectUri = `${baseUrl}/oauth/callback`;
     const tokenResult = await getActiveZohoAccessToken({
       refreshToken: code,
       region: location.includes('in') ? 'in' : 'us',
+      redirectUri: callbackRedirectUri,
     });
 
     if (tokenResult?.accessToken) {
