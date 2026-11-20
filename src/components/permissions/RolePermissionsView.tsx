@@ -22,7 +22,7 @@ import {
   Lock,
   Building,
 } from 'lucide-react';
-import { ActionPermissions, RolePermissionConfigData } from '@/app/api/permissions/roles/route';
+import { ActionPermissions, RolePermissionConfigData } from '@/lib/role-permissions';
 
 interface RolePermissionsViewProps {
   onShowToast: (message: string) => void;
