@@ -932,7 +932,14 @@ export default function RecActsFullyFunctionalApp() {
       const params = new URLSearchParams(window.location.search);
       if (params.get('zoho_success')) {
         const synced = params.get('synced');
-        showToast(`Zoho OAuth connected! Successfully synced ${synced || 'live'} tickets.`);
+        showToast(synced ? `Zoho OAuth connected! Successfully synced ${synced} tickets.` : 'Zoho OAuth connected! Syncing live tickets...');
+        setHasZohoAuthConnected(true);
+        sessionStorage.removeItem('recacts_bootstrap_snapshot');
+        if (params.get('trigger_sync') || !synced) {
+          setTimeout(() => {
+            handleSyncZoho(false);
+          }, 300);
+        }
         window.history.replaceState({}, '', window.location.pathname);
       } else if (params.get('zoho_error')) {
         const err = params.get('zoho_error');

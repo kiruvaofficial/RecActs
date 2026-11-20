@@ -121,6 +121,132 @@ export function saveZohoRefreshTokenToEnv(token: string) {
   }
 }
 
+export async function saveZohoRefreshTokenToDb(token: string) {
+  if (!token || token.trim().length < 15) return;
+  try {
+    process.env.ZOHO_REFRESH_TOKEN = token.trim();
+    saveZohoRefreshTokenToEnv(token.trim());
+    await prisma.featureFlag.upsert({
+      where: { key: 'zoho_refresh_token' },
+      update: { description: token.trim(), isEnabled: true },
+      create: {
+        key: 'zoho_refresh_token',
+        name: 'Zoho Refresh Token',
+        description: token.trim(),
+        isEnabled: true,
+        scope: 'organization',
+      },
+    });
+  } catch (e) {
+    console.warn('Failed saving Zoho refresh token to DB:', e);
+  }
+}
+
+export async function getZohoRefreshTokenFromDb(): Promise<string | null> {
+  try {
+    if (process.env.ZOHO_REFRESH_TOKEN && process.env.ZOHO_REFRESH_TOKEN.length > 15) {
+      return process.env.ZOHO_REFRESH_TOKEN;
+    }
+    const flag = await prisma.featureFlag.findUnique({
+      where: { key: 'zoho_refresh_token' },
+    });
+    if (flag?.description && flag.description.length > 15) {
+      process.env.ZOHO_REFRESH_TOKEN = flag.description;
+      return flag.description;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Dedicated instant OAuth 2.0 authorization code exchange
+ * Exclusively uses grant_type=authorization_code with the exact redirect_uri in < 500ms
+ */
+export async function exchangeZohoAuthCode(params: {
+  code: string;
+  redirectUri: string;
+  region?: 'us' | 'in' | 'eu' | 'au';
+  clientId?: string;
+  clientSecret?: string;
+  portalId?: string;
+}): Promise<{
+  accessToken: string;
+  refreshToken?: string;
+  region: 'us' | 'in' | 'eu' | 'au';
+  portalId: string;
+}> {
+  const clientId =
+    params.clientId ||
+    process.env.ZOHO_CLIENT_ID ||
+    process.env.VITE_ZOHO_CLIENT_ID ||
+    '1000.O1OL92CNYEKKMU9P7ABHC4NNR9XJCP';
+
+  const clientSecret =
+    params.clientSecret ||
+    process.env.ZOHO_CLIENT_SECRET ||
+    process.env.VITE_ZOHO_CLIENT_SECRET ||
+    '85015712e3bbd0f9763d9ac4142370ca7a2cc32319';
+
+  const portalId =
+    params.portalId ||
+    process.env.ZOHO_PORTAL_ID ||
+    process.env.VITE_ZOHO_PORTAL_ID ||
+    '730202335';
+
+  const preferredRegion = params.region || 'us';
+  const regionsToTry: Array<'us' | 'in' | 'eu' | 'au'> = [
+    preferredRegion,
+    ...(preferredRegion !== 'in' ? (['in', 'us', 'eu', 'au'] as const) : (['us', 'eu', 'au'] as const)),
+  ].filter((v, i, a) => a.indexOf(v) === i) as any;
+
+  const debugErrors: string[] = [];
+
+  for (const r of regionsToTry) {
+    const endpoints = REGION_DOMAINS[r] || REGION_DOMAINS.us;
+
+    try {
+      const codeBody = new URLSearchParams();
+      codeBody.append('grant_type', 'authorization_code');
+      codeBody.append('client_id', clientId);
+      codeBody.append('client_secret', clientSecret);
+      codeBody.append('code', params.code);
+      codeBody.append('redirect_uri', params.redirectUri);
+
+      const codeRes = await fetch(`${endpoints.accounts}/oauth/v2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: codeBody.toString(),
+      });
+
+      const codeData = await codeRes.json().catch(() => null);
+      if (codeRes.ok && codeData?.access_token) {
+        const expiresIn = (codeData.expires_in || 3600) * 1000;
+        cachedToken = {
+          accessToken: codeData.access_token,
+          expiresAt: Date.now() + expiresIn,
+          region: r,
+        };
+        saveCachedTokenToDisk(cachedToken);
+        if (codeData.refresh_token) {
+          await saveZohoRefreshTokenToDb(codeData.refresh_token);
+        }
+        return {
+          accessToken: codeData.access_token,
+          refreshToken: codeData.refresh_token,
+          region: r,
+          portalId,
+        };
+      } else if (codeData?.error) {
+        debugErrors.push(`[Region .${r}]: ${codeData.error}`);
+      }
+    } catch (e: any) {
+      debugErrors.push(`[Region Err .${r}]: ${e?.message}`);
+    }
+  }
+
+  throw new Error(`Zoho Code Exchange failed: ${debugErrors.join(' | ')}`);
+}
+
 /**
  * Resolves active Zoho OAuth Access Token across regions
  */
@@ -141,11 +267,16 @@ export async function getActiveZohoAccessToken(overrideConfig?: ZohoSprintsConfi
     process.env.VITE_ZOHO_CLIENT_SECRET ||
     '85015712e3bbd0f9763d9ac4142370ca7a2cc32319';
 
-  const refreshToken =
+  let refreshToken =
     overrideConfig?.refreshToken ||
     process.env.ZOHO_REFRESH_TOKEN ||
     process.env.VITE_ZOHO_REFRESH_TOKEN ||
     '';
+
+  if (!refreshToken || refreshToken.length < 15) {
+    const dbToken = await getZohoRefreshTokenFromDb();
+    if (dbToken) refreshToken = dbToken;
+  }
 
   const portalId =
     overrideConfig?.portalId ||

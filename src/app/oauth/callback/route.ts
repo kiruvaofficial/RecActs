@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveZohoAccessToken, saveZohoRefreshTokenToEnv, syncZohoTicketsToRecActs } from '@/lib/zoho-sprints';
-import prisma from '@/lib/prisma';
+import { exchangeZohoAuthCode, saveZohoRefreshTokenToDb } from '@/lib/zoho-sprints';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,30 +20,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Attempt exchange with the code using the exact redirect URI matching this request
+    // Attempt instant code exchange using the exact redirect URI matching this request (< 500ms)
     const callbackRedirectUri = `${baseUrl}/oauth/callback`;
-    const tokenResult = await getActiveZohoAccessToken({
-      refreshToken: code,
-      region: location.includes('in') ? 'in' : 'us',
+    const tokenResult = await exchangeZohoAuthCode({
+      code,
       redirectUri: callbackRedirectUri,
+      region: location.includes('in') ? 'in' : 'us',
     });
 
     if (tokenResult?.accessToken) {
-      // Find BlindMatrix org
-      const org = await prisma.organization.findFirst({
-        where: { slug: 'blindmatrix' },
-      }) || await prisma.organization.findFirst();
-
-      if (org) {
-        const syncRes = await syncZohoTicketsToRecActs(org.id, {
-          actorName: 'Zoho OAuth Integration',
-        });
-        return NextResponse.redirect(
-          `${baseUrl}/?zoho_success=true&synced=${syncRes.totalSynced}&created=${syncRes.created}&updated=${syncRes.updated}`
-        );
+      if (tokenResult.refreshToken) {
+        await saveZohoRefreshTokenToDb(tokenResult.refreshToken);
       }
-
-      return NextResponse.redirect(`${baseUrl}/?zoho_success=true`);
+      // Instant redirect back to app; client-side will show toast and trigger sync asynchronously
+      return NextResponse.redirect(`${baseUrl}/?zoho_success=true&trigger_sync=true`);
     } else {
       return NextResponse.redirect(`${baseUrl}/?zoho_error=${encodeURIComponent('Failed to verify token with Zoho Sprints')}`);
     }
