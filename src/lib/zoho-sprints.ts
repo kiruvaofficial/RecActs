@@ -69,6 +69,26 @@ const KNOWN_STATUS_IDS: Record<string, string> = {
 
 // Global cached access token in memory with timestamp
 let cachedToken: { accessToken: string; expiresAt: number; region: string } | null = null;
+const TOKEN_CACHE_FILE = path.resolve(process.cwd(), '.zoho_token_cache.json');
+
+function loadCachedTokenFromDisk(): { accessToken: string; expiresAt: number; region: string } | null {
+  try {
+    if (fs.existsSync(TOKEN_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
+      if (data && data.accessToken && data.expiresAt > Date.now() + 60_000) {
+        return data;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function saveCachedTokenToDisk(token: { accessToken: string; expiresAt: number; region: string }) {
+  try {
+    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(token), 'utf8');
+  } catch (e) {}
+}
+
 let lastSyncMetadata: {
   timestamp: string;
   totalSynced: number;
@@ -153,6 +173,16 @@ export async function getActiveZohoAccessToken(overrideConfig?: ZohoSprintsConfi
     };
   }
 
+  const diskCached = loadCachedTokenFromDisk();
+  if (diskCached) {
+    cachedToken = diskCached;
+    return {
+      accessToken: diskCached.accessToken,
+      region: diskCached.region as any,
+      portalId,
+    };
+  }
+
   const debugLogs: string[] = [];
   const redirectUrisToTry = [
     'http://localhost:3000/oauth/callback',
@@ -176,6 +206,7 @@ export async function getActiveZohoAccessToken(overrideConfig?: ZohoSprintsConfi
               expiresAt: Date.now() + 3600 * 1000,
               region: r,
             };
+            saveCachedTokenToDisk(cachedToken);
             return { accessToken: refreshToken, region: r, portalId };
           }
         }
@@ -213,6 +244,7 @@ export async function getActiveZohoAccessToken(overrideConfig?: ZohoSprintsConfi
               expiresAt: Date.now() + expiresIn,
               region: r,
             };
+            saveCachedTokenToDisk(cachedToken);
             if (refreshToken && refreshToken.length > 20) {
               saveZohoRefreshTokenToEnv(refreshToken);
             }
@@ -690,17 +722,29 @@ export async function fetchAllZohoTickets(
           let bHasMore = true;
           while (bHasMore && bIndex <= 1000) {
             const bItemsRes = await fetch(
-              `${baseUrl}/team/${portalId}/projects/${projId}/sprints/${bId}/item/?action=data&index=${bIndex}&range=100`,
+              `${baseUrl}/team/${portalId}/projects/${projId}/sprints/${bId}/item/?action=data&index=${bIndex}&range=100&subitem=true`,
               { headers }
             );
             if (bItemsRes.ok) {
               const bJson = await bItemsRes.json();
-              const items = bJson.items || bJson.item_details || bJson.data || [];
+              let items = bJson.items || bJson.item_details || bJson.data || [];
+              if (items.length === 0 && bJson.itemIds && bJson.itemJObj && bJson.item_prop) {
+                const props = bJson.item_prop;
+                items = bJson.itemIds.map((id: string) => {
+                  const arr = bJson.itemJObj[id];
+                  const it: any = { id };
+                  for (const [k, idx] of Object.entries<number>(props)) {
+                    it[k] = arr[idx];
+                  }
+                  return it;
+                });
+              }
               if (items.length === 0) {
                 bHasMore = false;
                 break;
               }
-              processRawItems(items, projName, 'Backlog', rawTickets, todayStr, schema);
+              const enriched = await enrichItemsWithDetails(items, projId, bId, baseUrl, portalId, headers);
+              processRawItems(enriched, projName, 'Backlog', rawTickets, todayStr, schema);
               if (items.length < 100) {
                 bHasMore = false;
               } else {
@@ -724,8 +768,22 @@ export async function fetchAllZohoTickets(
       );
       if (sListRes.ok) {
         const sJson = await sListRes.json();
-        const sprints = sJson.sprints || sJson.sprint_details || sJson.data || [];
-        for (const sp of sprints.slice(0, 3)) {
+        let sprints = sJson.sprints || sJson.sprint_details || sJson.data || [];
+        if (sprints.length === 0 && sJson.sprintIds && (sJson.sprintJObj || sJson.sprintsJObj)) {
+          const spProp = sJson.sprint_prop || {};
+          const spMap = sJson.sprintJObj || sJson.sprintsJObj;
+          sprints = sJson.sprintIds.map((id: string) => {
+            const arr = spMap[id];
+            return {
+              id,
+              sprintId: id,
+              name: arr ? arr[spProp.sprintName] : `Sprint ${id}`,
+              sprintName: arr ? arr[spProp.sprintName] : `Sprint ${id}`,
+              status: arr ? arr[spProp.status] : undefined,
+            };
+          });
+        }
+        for (const sp of sprints.slice(0, 5)) {
           const sId = sp.id || sp.sprintId;
           const sName = sp.name || sp.sprintName || `Sprint ${sId}`;
           if (sId) {
@@ -733,17 +791,29 @@ export async function fetchAllZohoTickets(
             let sHasMore = true;
             while (sHasMore && sIndex <= 1000) {
               const sItemsRes = await fetch(
-                `${baseUrl}/team/${portalId}/projects/${projId}/sprints/${sId}/item/?action=data&index=${sIndex}&range=100`,
+                `${baseUrl}/team/${portalId}/projects/${projId}/sprints/${sId}/item/?action=data&index=${sIndex}&range=100&subitem=true`,
                 { headers }
               );
               if (sItemsRes.ok) {
                 const sItemsJson = await sItemsRes.json();
-                const items = sItemsJson.items || sItemsJson.item_details || sItemsJson.data || [];
+                let items = sItemsJson.items || sItemsJson.item_details || sItemsJson.data || [];
+                if (items.length === 0 && sItemsJson.itemIds && sItemsJson.itemJObj && sItemsJson.item_prop) {
+                  const props = sItemsJson.item_prop;
+                  items = sItemsJson.itemIds.map((id: string) => {
+                    const arr = sItemsJson.itemJObj[id];
+                    const it: any = { id };
+                    for (const [k, idx] of Object.entries<number>(props)) {
+                      it[k] = arr[idx];
+                    }
+                    return it;
+                  });
+                }
                 if (items.length === 0) {
                   sHasMore = false;
                   break;
                 }
-                processRawItems(items, projName, sName, rawTickets, todayStr, schema);
+                const enriched = await enrichItemsWithDetails(items, projId, sId, baseUrl, portalId, headers);
+                processRawItems(enriched, projName, sName, rawTickets, todayStr, schema);
                 if (items.length < 100) {
                   sHasMore = false;
                 } else {
@@ -877,10 +947,7 @@ function processRawItems(
     const actualStartDate = raw.actualStartDate ? String(raw.actualStartDate).substring(0, 10) : plannedStartDate;
     const completedDate = mappedStatus === 'Completed' ? plannedDueDate : null;
 
-    // 7. Estimated hours (default 24h if unspecified)
-    const durationHours = Number(raw.durationHours || raw.estimated_hours || raw.points || 24);
-
-    // 8. Custom Layouts and Fields (UDF_*) Resolution
+    // 7. Custom Layouts and Fields (UDF_*) Resolution
     const resolvedCustomFields: Record<string, NormalizedCustomField> = {};
     for (const [k, val] of Object.entries(raw)) {
       if (
@@ -934,6 +1001,29 @@ function processRawItems(
       }
     }
 
+    // 8. Requirement Weightage: Calculate from user-defined field UDF_LONG5 (Requirement Weightage)
+    const rawUdfWeight =
+      raw.UDF_LONG5 ??
+      resolvedCustomFields['UDF_LONG5']?.rawValue ??
+      resolvedCustomFields['UDF_LONG5']?.displayValue;
+
+    let requirementWeightage = 0;
+    if (
+      rawUdfWeight !== undefined &&
+      rawUdfWeight !== null &&
+      rawUdfWeight !== '' &&
+      rawUdfWeight !== -1 &&
+      rawUdfWeight !== '-1'
+    ) {
+      const parsed = parseFloat(String(rawUdfWeight).trim());
+      if (!isNaN(parsed) && parsed > 0) {
+        requirementWeightage = parsed;
+      }
+    }
+
+    // 8. Requirement Weightage strictly from user-defined field UDF_LONG5 (no points-based calculation)
+    const effectiveWeightage = requirementWeightage > 0 ? requirementWeightage : 0;
+
     // 9. Assignee name: prefer explicit owner, fallback to Developers custom field
     const developerCustomField = resolvedCustomFields['UDF_MULTIPKL1']?.displayValue;
     const assigneeName =
@@ -957,7 +1047,7 @@ function processRawItems(
       plannedDueDate,
       actualStartDate,
       completedDate,
-      totalEstimatedHours: Math.max(8, durationHours),
+      totalEstimatedHours: effectiveWeightage,
       points,
       description: raw.description || raw.summary || title,
       assigneeName,
@@ -1040,6 +1130,34 @@ export async function syncZohoTicketsToRecActs(
       where: { organizationId },
     });
 
+    // Pre-fetch all existing tickets for this organization to enable fast, unambiguous O(1) deduplication
+    const existingOrgTickets = await prisma.ticket.findMany({
+      where: { organizationId },
+      include: { assignments: true },
+    });
+
+    // Multi-key lookup indexes:
+    // 1. Immutable Zoho Item ID (primary guarantee against duplicates when reference prefixes change)
+    const ticketsByZohoItemId = new Map<string, (typeof existingOrgTickets)[0]>();
+    // 2. Ticket reference variations (exact reference, uppercase)
+    const ticketsByReference = new Map<string, (typeof existingOrgTickets)[0]>();
+    // 3. Ticket title (exact match fallback)
+    const ticketsByTitle = new Map<string, (typeof existingOrgTickets)[0]>();
+
+    for (const t of existingOrgTickets) {
+      if (t.rawPayload && typeof t.rawPayload === 'object') {
+        const p = t.rawPayload as any;
+        const zId = String(p.itemId || p.id || p.item_id || '').trim();
+        if (zId) ticketsByZohoItemId.set(zId, t);
+      }
+      if (t.reference) {
+        ticketsByReference.set(t.reference.toUpperCase().trim(), t);
+      }
+      if (t.title) {
+        ticketsByTitle.set(t.title.toLowerCase().trim(), t);
+      }
+    }
+
     let createdCount = 0;
     let updatedCount = 0;
     const syncedTickets: any[] = [];
@@ -1087,20 +1205,32 @@ export async function syncZohoTicketsToRecActs(
             if (found) matchedMembers.push(found);
           }
 
-          // Check if ticket already exists in PostgreSQL (match REQ-I*, LA-I*, or LA-*)
-          const altRef1 = item.reference.startsWith('REQ-I') ? item.reference.replace('REQ-I', 'LA-I') : item.reference.replace('LA-I', 'REQ-I');
-          const altRef2 = item.reference.startsWith('REQ-I') ? item.reference.replace('REQ-I', 'LA-') : item.reference.replace('LA-', 'REQ-I');
-          const existing = await prisma.ticket.findFirst({
-            where: {
-              organizationId,
-              OR: [
-                { reference: item.reference },
-                { reference: altRef1 },
-                { reference: altRef2 },
-              ],
-            },
-            include: { assignments: true },
-          });
+          // Check if ticket already exists in PostgreSQL
+          // Priority 1: Match by Zoho itemId from rawPayload (immutable across reference prefix changes)
+          let existing: (typeof existingOrgTickets)[0] | undefined;
+          const zohoItemId = item.rawPayload
+            ? String((item.rawPayload as any).itemId || (item.rawPayload as any).id || (item.rawPayload as any).item_id || '').trim()
+            : '';
+
+          if (zohoItemId && ticketsByZohoItemId.has(zohoItemId)) {
+            existing = ticketsByZohoItemId.get(zohoItemId);
+          }
+
+          // Priority 2: Match by reference and common project prefixes (REQ-I <-> LA-I <-> LA-)
+          if (!existing) {
+            const rawRef = (item.reference || '').toUpperCase().trim();
+            const altRef1 = rawRef.startsWith('REQ-I') ? rawRef.replace('REQ-I', 'LA-I') : rawRef.replace('LA-I', 'REQ-I');
+            const altRef2 = rawRef.startsWith('REQ-I') ? rawRef.replace('REQ-I', 'LA-') : rawRef.replace('LA-', 'REQ-I');
+            existing =
+              ticketsByReference.get(rawRef) ||
+              ticketsByReference.get(altRef1) ||
+              ticketsByReference.get(altRef2);
+          }
+
+          // Priority 3: Match by normalized ticket title
+          if (!existing && item.title) {
+            existing = ticketsByTitle.get(item.title.toLowerCase().trim());
+          }
 
           if (existing) {
             // UPDATE existing ticket
@@ -1115,11 +1245,18 @@ export async function syncZohoTicketsToRecActs(
                 plannedStartDate: item.plannedStartDate,
                 plannedDueDate: item.plannedDueDate,
                 completedDate: item.completedDate,
+                totalEstimatedHours: item.totalEstimatedHours,
                 description: item.description,
                 customFields: (item.customFields as any) || undefined,
                 rawPayload: (item.rawPayload as any) || undefined,
               },
+              include: { assignments: true },
             });
+
+            // Keep in-memory cache synchronized
+            if (zohoItemId) ticketsByZohoItemId.set(zohoItemId, updated);
+            if (updated.reference) ticketsByReference.set(updated.reference.toUpperCase().trim(), updated);
+            if (updated.title) ticketsByTitle.set(updated.title.toLowerCase().trim(), updated);
 
             // Sync assignments for all matched designers
             if (matchedMembers.length > 0) {
@@ -1168,7 +1305,13 @@ export async function syncZohoTicketsToRecActs(
                 customFields: (item.customFields as any) || undefined,
                 rawPayload: (item.rawPayload as any) || undefined,
               },
+              include: { assignments: true },
             });
+
+            // Register newly created ticket in memory caches
+            if (zohoItemId) ticketsByZohoItemId.set(zohoItemId, created);
+            if (created.reference) ticketsByReference.set(created.reference.toUpperCase().trim(), created);
+            if (created.title) ticketsByTitle.set(created.title.toLowerCase().trim(), created);
 
             if (matchedMembers.length > 0) {
               const shareHours = Math.round((item.totalEstimatedHours / matchedMembers.length) * 10) / 10;

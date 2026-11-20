@@ -395,6 +395,8 @@ export default function RecActsFullyFunctionalApp() {
       'new': 12,
       'backlog': 13,
       'open': 14,
+      'req reassigned': 15,
+      'reassigned': 16,
       'req in progress': 20,
       'analysis': 21,
       'requirement analysis': 22,
@@ -444,6 +446,9 @@ export default function RecActsFullyFunctionalApp() {
     const lower = statusName.toLowerCase();
     if (lower.includes('req to do') || lower === 'to do' || lower === 'new' || lower === 'open' || lower === 'backlog') {
       return { starColor: 'text-emerald-400', topBarColor: 'bg-emerald-500', accentBorder: 'border-l-emerald-500', badgeBg: 'bg-emerald-500/15 text-emerald-400' };
+    }
+    if (lower.includes('reassigned') || lower.includes('reassign')) {
+      return { starColor: 'text-sky-400', topBarColor: 'bg-sky-500', accentBorder: 'border-l-sky-500', badgeBg: 'bg-sky-500/15 text-sky-400' };
     }
     if (lower.includes('req in prog') || lower === 'req in progress' || lower.includes('analysis')) {
       return { starColor: 'text-amber-400', topBarColor: 'bg-amber-500', accentBorder: 'border-l-amber-500', badgeBg: 'bg-amber-500/15 text-amber-400' };
@@ -596,8 +601,18 @@ export default function RecActsFullyFunctionalApp() {
       });
     }
 
+    if (ticketDeptFilter !== 'all') {
+      const deptPrefix = ticketDeptFilter.toLowerCase().slice(0, 3);
+      return dynamicCols.filter((col) => {
+        const colTickets = visibleFilteredTickets.filter(col.filter);
+        if (colTickets.length > 0) return true;
+        const colLower = col.title.toLowerCase();
+        return colLower.includes(deptPrefix) || colLower.includes(ticketDeptFilter.toLowerCase());
+      });
+    }
+
     return dynamicCols;
-  }, [kanbanGroupBy, availableTicketDepartments, availableDynamicStatuses, visibleFilteredTickets]);
+  }, [kanbanGroupBy, availableTicketDepartments, availableDynamicStatuses, visibleFilteredTickets, ticketDeptFilter]);
 
   const totalSprintMetrics = useMemo(() => {
     let pts = 0;
@@ -1583,7 +1598,7 @@ export default function RecActsFullyFunctionalApp() {
   }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark bg-[#090D16] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
+    <div className={`min-h-screen ${activeTab === 'timeline' ? 'h-screen overflow-hidden' : ''} ${darkMode ? 'dark bg-[#090D16] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-2xl bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs font-medium border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-3">
@@ -1666,9 +1681,9 @@ export default function RecActsFullyFunctionalApp() {
       </header>
 
       {/* APP BODY */}
-      <div className="flex">
+      <div className={`flex ${activeTab === 'timeline' ? 'h-[calc(100vh-3.5rem)] overflow-hidden' : ''}`}>
         {/* SIDEBAR */}
-        <aside className="w-60 flex-none min-h-[calc(100vh-3.5rem)] border-r border-slate-200/80 dark:border-white/[0.08] bg-white/50 dark:bg-[#0B0F19]/60 backdrop-blur-xl p-3 space-y-5">
+        <aside className={`w-60 flex-none ${activeTab === 'timeline' ? 'h-full overflow-y-auto' : 'min-h-[calc(100vh-3.5rem)]'} border-r border-slate-200/80 dark:border-white/[0.08] bg-white/50 dark:bg-[#0B0F19]/60 backdrop-blur-xl p-3 space-y-5`}>
           <div>
             <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Core Workspace</p>
             <div className="space-y-0.5">
@@ -1738,7 +1753,7 @@ export default function RecActsFullyFunctionalApp() {
         </aside>
 
         {/* MAIN VIEW */}
-        <main className={`flex-1 min-w-0 space-y-6 ${activeTab === 'tickets' || activeTab === 'timeline' ? 'p-4 lg:p-6 w-full max-w-none' : 'p-6 lg:p-8 max-w-7xl mx-auto'}`}>
+        <main className={`flex-1 min-w-0 ${activeTab === 'timeline' ? 'h-full overflow-hidden flex flex-col p-3 lg:p-4 w-full max-w-none' : activeTab === 'tickets' ? 'p-4 lg:p-6 w-full max-w-none space-y-6' : 'p-6 lg:p-8 max-w-7xl mx-auto space-y-6'}`}>
           {/* ========================================================================= */}
           {/* 1. VIEW: DASHBOARD OVERVIEW */}
           {/* ========================================================================= */}
@@ -2065,7 +2080,7 @@ export default function RecActsFullyFunctionalApp() {
                             <div className="flex items-center gap-3 text-[11px] text-slate-400">
                               <span>Client: <strong className="text-slate-300">{t.customer}</strong></span>
                               <span>•</span>
-                              <span>Total: <strong className="text-indigo-400">{t.totalWeightage}h</strong></span>
+                              <span>Total: <strong className="text-indigo-400">{t.totalWeightage > 0 ? `${t.totalWeightage}h` : '—'}</strong></span>
                               <span>•</span>
                               <span>
                                 Assignees: {t.allocations?.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ') || 'Unassigned'}
@@ -3085,9 +3100,9 @@ export default function RecActsFullyFunctionalApp() {
                                           <span>0{Math.max(1, t.allocations?.length || 1)}</span>
                                         </div>
                                         <div className="flex items-center gap-1 font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-300 border border-slate-200/50 dark:border-white/[0.06]">
-                                          <Clock className="w-2.5 h-2.5 text-indigo-400" />
-                                          <span>
-                                            {t.totalWeightage}h ({t.points || Math.max(1, Math.round(t.totalWeightage / 5))} pts)
+                                          <Clock className={`w-2.5 h-2.5 ${t.totalWeightage > 0 ? 'text-indigo-400' : 'text-slate-500'}`} />
+                                          <span className={t.totalWeightage > 0 ? 'text-slate-200 font-semibold' : 'text-slate-500'}>
+                                            {t.totalWeightage > 0 ? `${t.totalWeightage}h` : '—'}
                                           </span>
                                         </div>
                                       </div>
@@ -3151,7 +3166,21 @@ export default function RecActsFullyFunctionalApp() {
                               onClick={() => setSelectedTicket(t)}
                               className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
                             >
-                              <td className="py-3 px-4 font-mono font-bold text-indigo-500 whitespace-nowrap">{resolveTicketReference(t.ref, t.title)}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-indigo-500 whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span>{resolveTicketReference(t.ref, t.title)}</span>
+                                  <a
+                                    href={t.zohoUrl || `/api/tickets/${t.id}/sprint`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 rounded text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                                    title={`Open ${t.ref} in Zoho Sprints ↗`}
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </td>
                               <td className="py-3 px-4 max-w-xs">
                                 <p className="font-semibold text-slate-900 dark:text-white truncate">{t.title}</p>
                                 <p className="text-[11px] text-slate-400 truncate">{t.customer}</p>
@@ -3177,7 +3206,9 @@ export default function RecActsFullyFunctionalApp() {
                               <td className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
                                 {t.plannedStart || '—'} → {t.plannedDue || '—'}
                               </td>
-                              <td className="py-3 px-4 font-bold whitespace-nowrap">{t.totalWeightage}h</td>
+                              <td className="py-3 px-4 font-bold whitespace-nowrap">
+                                {t.totalWeightage > 0 ? `${t.totalWeightage}h` : <span className="text-slate-500 font-normal">—</span>}
+                              </td>
                               <td className="py-3 px-4 text-slate-300 max-w-xs truncate">
                                 {t.allocations?.length > 0
                                   ? t.allocations.map((a: any) => `${a.memberName} (${a.allocatedHours}h)`).join(', ')
@@ -4863,15 +4894,31 @@ export default function RecActsFullyFunctionalApp() {
       {/* TICKET DRAWER MODAL */}
       {selectedTicket && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="modern-card max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.06]">
-              <div>
-                <span className="font-mono text-xs font-bold text-indigo-400">{resolveTicketReference(selectedTicket.ref, selectedTicket.title)}</span>
-                <h3 className="font-bold text-base">{selectedTicket.title}</h3>
+          <div className="modern-card max-w-xl w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-white/[0.06]">
+              <div className="min-w-0 flex-1 pr-2">
+                <span className="font-mono text-xs font-bold text-indigo-400 block mb-0.5">{resolveTicketReference(selectedTicket.ref, selectedTicket.title)}</span>
+                <h3 className="font-bold text-base leading-snug line-clamp-2" title={selectedTicket.title}>{selectedTicket.title}</h3>
               </div>
-              <button onClick={() => setSelectedTicket(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                <a
+                  href={selectedTicket.zohoUrl || `/api/tickets/${selectedTicket.id}/sprint`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold whitespace-nowrap shadow-sm shadow-indigo-600/25 transition-all cursor-pointer"
+                  title="Open in Zoho Sprints ↗"
+                >
+                  <span>Open in Sprint</span>
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                </a>
+                <button
+                  onClick={() => setSelectedTicket(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3 text-xs">
@@ -4911,7 +4958,14 @@ export default function RecActsFullyFunctionalApp() {
               <div>
                 <span className="text-slate-400 block mb-1">Shared Weightage Allocation:</span>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] space-y-1.5">
-                  <p className="font-bold text-indigo-400">Total Weightage: {selectedTicket.totalWeightage} hours</p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-indigo-400">Total Weightage: {selectedTicket.totalWeightage > 0 ? `${selectedTicket.totalWeightage} hours` : '0 hours'}</p>
+                    {((selectedTicket.customFields as any)?.UDF_LONG5 || (selectedTicket.rawPayload as any)?.UDF_LONG5 || selectedTicket.requirementWeightage) ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-mono font-semibold border border-indigo-500/30">
+                        Requirement Weightage (UDF_LONG5): {String(selectedTicket.requirementWeightage || (selectedTicket.customFields as any)?.UDF_LONG5?.displayValue || (selectedTicket.customFields as any)?.UDF_LONG5?.rawValue || (selectedTicket.rawPayload as any)?.UDF_LONG5)}h
+                      </span>
+                    ) : null}
+                  </div>
                   {selectedTicket.allocations?.map((al: any) => (
                     <div key={al.id} className="flex items-center justify-between">
                       <span>{al.memberName}:</span>

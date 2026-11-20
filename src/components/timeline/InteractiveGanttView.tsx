@@ -117,6 +117,7 @@ interface ProcessedTicket {
   devEndDate: string | null;
   targetLiveDate: string | null;
   weightage: number;
+  zohoUrl?: string;
 }
 
 interface TimelineFilters {
@@ -174,6 +175,7 @@ export default function InteractiveGanttView({
   const [filterDateStatus, setFilterDateStatus] = useState<'all' | 'scheduled' | 'missing' | 'end_only' | 'no_dates'>(initialSavedFilters.filterDateStatus);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [hoveredTicketId, setHoveredTicketId] = useState<string | null>(null);
+  const [tableHeight, setTableHeight] = useState<'fit' | 'tall' | 'compact'>('fit');
 
   // Sync state & Quick Edit Modal State
   const [isSyncingLocal, setIsSyncingLocal] = useState<boolean>(false);
@@ -497,6 +499,7 @@ export default function InteractiveGanttView({
         devEndDate: devEnd,
         targetLiveDate: targetLive,
         weightage: t.totalWeightage || t.points || 0,
+        zohoUrl: t.zohoUrl || (t.id ? `/api/tickets/${t.id}/sprint` : undefined),
       };
     });
   }, [ticketsList, dateTrack]);
@@ -920,8 +923,15 @@ export default function InteractiveGanttView({
   const gridMinWidth = totalDays * dayColWidth;
   const isSyncingActive = isSyncingZohoProp || isSyncingLocal;
 
+  const heightClass =
+    tableHeight === 'tall'
+      ? 'h-[calc(100vh-210px)] min-h-[640px]'
+      : tableHeight === 'compact'
+      ? 'h-[500px]'
+      : 'h-[calc(100vh-275px)] min-h-[520px]';
+
   return (
-    <div className="space-y-5 animate-in fade-in duration-200 text-slate-900 dark:text-slate-100 relative">
+    <div className="h-full flex flex-col gap-2.5 overflow-hidden animate-in fade-in duration-200 text-slate-900 dark:text-slate-100 relative">
       {/* Toast Feedback */}
       {feedbackToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-xl border bg-slate-900 text-white border-slate-700 text-xs font-semibold animate-in slide-in-from-bottom-2">
@@ -936,7 +946,7 @@ export default function InteractiveGanttView({
       )}
 
       {/* 1. Header Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/30">
@@ -1042,117 +1052,76 @@ export default function InteractiveGanttView({
         </div>
       </div>
 
-      {/* 2. Top Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <div className="modern-card p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/70 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">TICKETS</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">{stats.total}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Active work items</p>
+      {/* 2. Compact Minimal KPI Metrics */}
+      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 shadow-2xs">
+          <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400 shrink-0">
+            <Layers className="w-3.5 h-3.5" />
           </div>
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-slate-700 dark:text-slate-300">
-            <Layers className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="modern-card p-4 rounded-xl border border-emerald-200/80 dark:border-emerald-900/30 bg-white/90 dark:bg-slate-900/70 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">SCHEDULED (START + END)</p>
-            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{stats.scheduled}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Complete date range</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="w-5 h-5" />
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tickets:</span>
+            <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.total}</span>
           </div>
         </div>
 
-        <div className="modern-card p-4 rounded-xl border border-indigo-200/80 dark:border-indigo-900/30 bg-white/90 dark:bg-slate-900/70 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">IN PROGRESS</p>
-            <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">{stats.inProgress}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Currently active</p>
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-emerald-200/80 dark:border-emerald-900/30 bg-white/80 dark:bg-slate-900/60 shadow-2xs">
+          <div className="w-6 h-6 rounded-md bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5" />
           </div>
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-            <Sparkles className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="modern-card p-4 rounded-xl border border-amber-200/80 dark:border-amber-900/30 bg-white/90 dark:bg-slate-900/70 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">MISSING DATES</p>
-            <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{stats.missingDates}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">End only or unscheduled</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="w-5 h-5" />
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Scheduled:</span>
+            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{stats.scheduled}</span>
           </div>
         </div>
 
-        <div className="modern-card p-4 rounded-xl border border-purple-200/80 dark:border-purple-900/30 bg-white/90 dark:bg-slate-900/70 shadow-xs col-span-2 sm:col-span-1 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">DESIGNERS</p>
-            <p className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1">{stats.designersCount}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Team owners</p>
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-indigo-200/80 dark:border-indigo-900/30 bg-white/80 dark:bg-slate-900/60 shadow-2xs">
+          <div className="w-6 h-6 rounded-md bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+            <Sparkles className="w-3.5 h-3.5" />
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
-            <Users className="w-5 h-5" />
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">In Progress:</span>
+            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{stats.inProgress}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-amber-200/80 dark:border-amber-900/30 bg-white/80 dark:bg-slate-900/60 shadow-2xs">
+          <div className="w-6 h-6 rounded-md bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+            <AlertTriangle className="w-3.5 h-3.5" />
+          </div>
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Missing Dates:</span>
+            <span className="text-sm font-black text-amber-600 dark:text-amber-400">{stats.missingDates}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-purple-200/80 dark:border-purple-900/30 bg-white/80 dark:bg-slate-900/60 shadow-2xs col-span-2 sm:col-span-1">
+          <div className="w-6 h-6 rounded-md bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+            <Users className="w-3.5 h-3.5" />
+          </div>
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Designers:</span>
+            <span className="text-sm font-black text-purple-600 dark:text-purple-400">{stats.designersCount}</span>
           </div>
         </div>
       </div>
 
-      {/* 3. Legend & Info Bar */}
-      <div className="modern-card p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mr-1">Legend:</span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-indigo-500" /> In progress
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-purple-500" /> Documentation
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-amber-500" /> To do
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-emerald-500" /> Completed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-2.5 rounded bg-purple-100 dark:bg-indigo-500/20 border border-purple-300 dark:border-indigo-400/40" /> Designer span
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-purple-600 dark:text-purple-400 font-bold text-sm">◆</span> End-date only
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-sky-600 dark:text-sky-400 font-bold text-sm">◆</span> Start-date only
-          </span>
-          <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-bold">
-            <span className="w-1 h-3.5 bg-rose-500 rounded-full inline-block" /> Today ({formatDateDisplay(todayStr)})
-          </span>
-        </div>
-
-        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-          Timeline: <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDateDisplay(timelineStart)}</span> &ndash;{' '}
-          <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDateDisplay(timelineEnd)}</span> ({totalDays} days)
-        </div>
-      </div>
-
-      {/* 4. Filter & Search Controls */}
-      <div className="modern-card p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* 3. Filter & Search Controls */}
+      <div className="shrink-0 modern-card p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
           {/* Search Input */}
           <div className="relative sm:col-span-2 lg:col-span-2">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search by ticket ID, title, designer, client..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+              className="w-full h-8 pl-8 pr-7 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
               >
                 &times;
               </button>
@@ -1164,7 +1133,7 @@ export default function InteractiveGanttView({
             <select
               value={groupBy}
               onChange={(e) => setGroupBy(e.target.value as any)}
-              className="w-full py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
+              className="w-full h-8 py-1 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
             >
               <option value="designer">Group by Designer (Default)</option>
               <option value="department">Group by Department</option>
@@ -1179,7 +1148,7 @@ export default function InteractiveGanttView({
             <select
               value={filterDepartment}
               onChange={(e) => setFilterDepartment(e.target.value)}
-              className="w-full py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
+              className="w-full h-8 py-1 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
             >
               <option value="all">All Departments ({allDepartments.length})</option>
               {allDepartments.map((dept) => (
@@ -1195,7 +1164,7 @@ export default function InteractiveGanttView({
             <select
               value={filterDesigner}
               onChange={(e) => setFilterDesigner(e.target.value)}
-              className="w-full py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
+              className="w-full h-8 py-1 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
             >
               <option value="all">All Designers ({allDesigners.length})</option>
               {allDesigners.map((d) => (
@@ -1211,7 +1180,7 @@ export default function InteractiveGanttView({
             <select
               value={filterDateStatus}
               onChange={(e) => setFilterDateStatus(e.target.value as any)}
-              className="w-full py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
+              className="w-full h-8 py-1 px-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-500 font-medium transition-colors"
             >
               <option value="all">All Date Statuses</option>
               <option value="scheduled">Scheduled Only (●)</option>
@@ -1223,8 +1192,8 @@ export default function InteractiveGanttView({
         </div>
 
         {/* User filter status bar + Action buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
+          <div className="flex items-center gap-2.5 text-slate-500 dark:text-slate-400">
             <button
               onClick={expandAll}
               className="hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors"
@@ -1242,34 +1211,35 @@ export default function InteractiveGanttView({
 
           {/* User Level Saved Filter Indicator */}
           <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 text-[11px] font-semibold">
-              <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 text-[10px] font-semibold">
+              <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
               <span>User filters saved: {currentUserName || 'active profile'}</span>
             </div>
 
             <button
               onClick={handleResetFilters}
-              className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium flex items-center gap-1 transition-colors px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
               title="Reset all filters to defaults"
             >
-              <RotateCcw className="w-3 h-3" /> Reset
+              <RotateCcw className="w-2.5 h-2.5" /> Reset
             </button>
           </div>
         </div>
       </div>
 
-      {/* 5. Main Split View: Table Columns + Calendar Grid */}
-      <div className="modern-card rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-lg overflow-hidden">
-        <div className="overflow-x-auto" ref={timelineContainerRef}>
+      {/* 4. Main Split View: Table Columns + Calendar Grid */}
+      <div className="flex-1 min-h-0 modern-card rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-lg overflow-hidden flex flex-col">
+        {/* Scrollable Container Filling 100% Remaining Height */}
+        <div className="flex-1 min-h-0 overflow-auto relative" ref={timelineContainerRef}>
           <div className="min-w-fit flex flex-col">
             {/* Header: Left Table Column Titles + Right Month/Day Ticks */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/90 sticky top-0 z-30">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 sticky top-0 z-30">
               {/* Left Table Headers */}
-              <div className="w-[560px] shrink-0 flex items-center text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 sticky left-0 z-30 shadow-[4px_0_12px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_16px_rgba(0,0,0,0.5)]">
-                <div className="w-28 shrink-0 px-3 py-3">Item ID</div>
-                <div className="flex-1 min-w-0 px-3 py-3">Deliverable / Ticket</div>
-                <div className="w-28 shrink-0 px-2 py-3 text-center">Status</div>
-                <div className="w-24 shrink-0 px-2 py-3 text-center">Dates</div>
+              <div className="w-[560px] shrink-0 flex items-center text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 sticky left-0 z-40 shadow-[4px_0_12px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_16px_rgba(0,0,0,0.5)]">
+                <div className="w-28 shrink-0 px-3 py-2.5">Item ID</div>
+                <div className="flex-1 min-w-0 px-3 py-2.5">Deliverable / Ticket</div>
+                <div className="w-28 shrink-0 px-2 py-2.5 text-center">Status</div>
+                <div className="w-24 shrink-0 px-2 py-2.5 text-center">Dates</div>
               </div>
 
               {/* Right Calendar Month/Day Header Tier */}
@@ -1438,23 +1408,34 @@ export default function InteractiveGanttView({
                             >
                               {/* Left Table Data */}
                               <div className="w-[560px] shrink-0 flex items-center border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky left-0 z-20 py-2 shadow-[4px_0_12px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_16px_rgba(0,0,0,0.5)]">
-                                {/* Item ID & Quick Edit Action */}
-                                <div className="w-28 shrink-0 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400 truncate flex items-center justify-between">
+                                {/* Item ID & Actions */}
+                                <div className="w-28 shrink-0 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400 truncate flex items-center justify-between gap-1">
                                   <button
                                     onClick={() => onSelectTicket && onSelectTicket(t.raw)}
-                                    className="hover:underline flex items-center gap-1 text-left truncate"
-                                    title={`View ${t.ref}`}
+                                    className="hover:underline text-left truncate"
+                                    title={`View ${t.ref} in RecActs`}
                                   >
                                     <span>{t.ref}</span>
-                                    <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
                                   </button>
-                                  <button
-                                    onClick={(e) => openEditModal(t, e)}
-                                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-opacity"
-                                    title="Quick Edit Dates & Details"
-                                  >
-                                    <Edit3 className="w-3 h-3" />
-                                  </button>
+                                  <div className="flex items-center shrink-0">
+                                    <a
+                                      href={t.zohoUrl || `/api/tickets/${t.id}/sprint`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1 rounded text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+                                      title={`Open ${t.ref} in Zoho Sprints ↗`}
+                                    >
+                                      <ExternalLink className="w-3 h-3 shrink-0" />
+                                    </a>
+                                    <button
+                                      onClick={(e) => openEditModal(t, e)}
+                                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-opacity"
+                                      title="Quick Edit Dates & Details"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {/* Title / Deliverable */}
@@ -1564,6 +1545,70 @@ export default function InteractiveGanttView({
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Bottom Legend & Info Footer */}
+        <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 px-3.5 py-2 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0 z-20">
+          <div className="flex flex-wrap items-center gap-3.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mr-0.5">Legend:</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-indigo-500" /> In progress
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-purple-500" /> Documentation
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-amber-500" /> To do
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Completed
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3.5 h-2 rounded bg-purple-100 dark:bg-indigo-500/20 border border-purple-300 dark:border-indigo-400/40" /> Designer span
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-purple-600 dark:text-purple-400 font-bold text-xs">◆</span> End-date only
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-sky-600 dark:text-sky-400 font-bold text-xs">◆</span> Start-date only
+            </span>
+            <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-bold">
+              <span className="w-1 h-3 bg-rose-500 rounded-full inline-block" /> Today ({formatDateDisplay(todayStr)})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Table Height Preset Selector */}
+            <div className="flex items-center bg-slate-200/70 dark:bg-slate-800/80 p-0.5 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400">
+              <span className="px-1.5 text-slate-500 uppercase text-[9px] font-bold">Height:</span>
+              <button
+                onClick={() => setTableHeight('fit')}
+                className={`px-1.5 py-0.5 rounded ${tableHeight === 'fit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-bold shadow-2xs' : 'hover:text-slate-900 dark:hover:text-slate-200'}`}
+                title="Full height of screen (Fit viewport)"
+              >
+                Full Screen
+              </button>
+              <button
+                onClick={() => setTableHeight('tall')}
+                className={`px-1.5 py-0.5 rounded ${tableHeight === 'tall' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-bold shadow-2xs' : 'hover:text-slate-900 dark:hover:text-slate-200'}`}
+                title="Expanded tall height"
+              >
+                Tall
+              </button>
+              <button
+                onClick={() => setTableHeight('compact')}
+                className={`px-1.5 py-0.5 rounded ${tableHeight === 'compact' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-bold shadow-2xs' : 'hover:text-slate-900 dark:hover:text-slate-200'}`}
+                title="Compact fixed height (500px)"
+              >
+                Compact
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono hidden sm:block">
+              Timeline: <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDateDisplay(timelineStart)}</span> &ndash;{' '}
+              <span className="text-slate-800 dark:text-slate-200 font-bold">{formatDateDisplay(timelineEnd)}</span> ({totalDays}d)
             </div>
           </div>
         </div>

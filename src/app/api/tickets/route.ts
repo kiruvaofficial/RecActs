@@ -5,6 +5,7 @@ import { requireTenantContext } from '@/lib/tenant';
 import prisma from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/audit';
 import { resolveZohoDesignerValue, extractIndividualDesigners, resolveTicketReference } from '@/lib/zoho-designer-resolver';
+import { buildZohoSprintTicketUrl } from '@/lib/zoho-url';
 
 function parseZohoDate(val: any): string | null {
   if (!val || val === '-1' || val === -1) return null;
@@ -87,6 +88,21 @@ export async function GET(req: NextRequest) {
       const testingStart = parseZohoDate(cf.UDF_DATE1?.rawValue || cf.UDF_DATE1?.displayValue || raw.UDF_DATE1);
       const testingEnd = parseZohoDate(cf.UDF_DATE2?.rawValue || cf.UDF_DATE2?.displayValue || raw.UDF_DATE2);
 
+      // Requirement Weightage strictly from user-defined field UDF_LONG5 (Requirement Weightage)
+      const rawUdfWeight =
+        (t.customFields as any)?.UDF_LONG5?.displayValue ??
+        (t.customFields as any)?.UDF_LONG5?.rawValue ??
+        (t.rawPayload as any)?.UDF_LONG5;
+      const parsedUdfWeight =
+        rawUdfWeight !== undefined && rawUdfWeight !== null && rawUdfWeight !== '' && rawUdfWeight !== -1 && rawUdfWeight !== '-1'
+          ? parseFloat(String(rawUdfWeight).trim())
+          : NaN;
+      const effectiveWeightage = !isNaN(parsedUdfWeight) && parsedUdfWeight > 0
+        ? parsedUdfWeight
+        : 0;
+
+      const zohoUrl = buildZohoSprintTicketUrl(t);
+
       return {
         id: t.id,
         ref: resolveTicketReference(t.reference, t.title, (t.rawPayload as any)?.itemNo),
@@ -105,6 +121,7 @@ export async function GET(req: NextRequest) {
         prototypeUrl: (t.customFields as any)?.UDF_URI4?.displayValue || (t.rawPayload as any)?.UDF_URI4 || null,
         docUrl: (t.customFields as any)?.UDF_URI3?.displayValue || (t.rawPayload as any)?.UDF_URI3 || null,
         rawPayload: t.rawPayload,
+        zohoUrl,
         plannedStart: t.plannedStartDate,
         plannedDue: t.plannedDueDate,
         requirementStartDate: reqStart,
@@ -115,7 +132,8 @@ export async function GET(req: NextRequest) {
         actualLiveDate: actualLive,
         testingStartDate: testingStart,
         testingEndDate: testingEnd,
-        totalWeightage: t.totalEstimatedHours,
+        totalWeightage: effectiveWeightage,
+        requirementWeightage: !isNaN(parsedUdfWeight) && parsedUdfWeight > 0 ? parsedUdfWeight : null,
         teamName: t.team?.name || 'Alpha',
         reassignmentCount: t.reassignmentCount,
         allocations: t.assignments.map((a) => ({
