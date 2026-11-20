@@ -80,6 +80,8 @@ import {
   syncUserFilterPreferencesFromServer,
 } from '@/lib/user-filters';
 import { UserManagementView } from '@/components/users/UserManagementView';
+import { RolePermissionsView } from '@/components/permissions/RolePermissionsView';
+import { DailyWorkLogsView } from '@/components/work-logs/DailyWorkLogsView';
 import InteractiveGanttView from '@/components/timeline/InteractiveGanttView';
 import { resolveZohoDesignerValue, resolveTicketReference } from '@/lib/zoho-designer-resolver';
 
@@ -1739,6 +1741,10 @@ export default function RecActsFullyFunctionalApp() {
                   hasPermission(role as FunctionalRole, 'org:manage_employees') ||
                   ['lead', 'manager', 'hr', 'owner', 'god'].includes(role)) &&
                   renderNavItem('users', 'Team & Users', <Users className="w-3.5 h-3.5 text-pink-400" />)}
+                {(['lead', 'manager', 'owner', 'god'].includes(role) ||
+                  currentUser?.isPlatformAdmin ||
+                  hasPermission(role as FunctionalRole, 'org:manage_settings')) &&
+                  renderNavItem('permissions', 'Roles & Permissions', <Shield className="w-3.5 h-3.5 text-indigo-400" />)}
                 {hasPermission(role as FunctionalRole, 'platform:api_docs') &&
                   renderNavItem('api-docs', 'REST API Explorer', <ExternalLink className="w-3.5 h-3.5" />)}
                 {hasPermission(role as FunctionalRole, 'org:manage_settings') &&
@@ -2182,202 +2188,17 @@ export default function RecActsFullyFunctionalApp() {
             ) : !hasPermission(role as FunctionalRole, 'work_logs:create') ? (
               renderAccessRestricted('Work Logs Restricted', 'Daily work logging is disabled for HR administration accounts.')
             ) : (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Daily Work Logs & Timesheets</h1>
-                  <p className="text-xs text-slate-500">
-                    Logged effort is tracked in integer minutes against assigned requirement tickets.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <button onClick={handleSaveDraftWorkLog} className="btn-modern-secondary px-3 py-2 text-xs">
-                    Save Draft
-                  </button>
-                  <button
-                    onClick={handleSubmitWorkLog}
-                    disabled={workLog.submissionStatus === 'Approved'}
-                    className="btn-modern-primary px-3.5 py-2 text-xs flex items-center gap-1.5"
-                  >
-                    <CheckCheck className="w-3.5 h-3.5" />
-                    <span>Submit Timesheet</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Status Header */}
-              <div className="modern-card p-4 flex items-center justify-between border-indigo-500/30">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-600/15 text-indigo-500 flex items-center justify-center">
-                    <Activity className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-xs">Timesheet Status:</span>
-                      <span
-                        className={`pill-badge ${
-                          workLog.submissionStatus === 'Approved'
-                            ? 'bg-emerald-500/15 text-emerald-500'
-                            : workLog.submissionStatus === 'Submitted'
-                            ? 'bg-indigo-500/15 text-indigo-400'
-                            : 'bg-amber-500/15 text-amber-500'
-                        }`}
-                      >
-                        {workLog.submissionStatus}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Monday, 9 Nov 2026 • Total Logged: {workLog.activities?.reduce((acc: number, a: any) => acc + (a.durationMinutes || 0), 0)} min (
-                      {(workLog.activities?.reduce((acc: number, a: any) => acc + (a.durationMinutes || 0), 0) / 60).toFixed(1)}h)
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleAddActivityRow}
-                  className="btn-modern-secondary px-3 py-1.5 text-xs flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Activity Row</span>
-                </button>
-              </div>
-
-              {/* Interactive Activities Spreadsheet */}
-              <div className="modern-card overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                      <tr>
-                        <th className="py-3 px-4">Ticket</th>
-                        <th className="py-3 px-4">Activity Category</th>
-                        <th className="py-3 px-4">Description</th>
-                        <th className="py-3 px-4">Interval</th>
-                        <th className="py-3 px-4">Duration</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4 text-center">Blocker?</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-                      {workLog.activities?.map((act: any, idx: number) => (
-                        <tr key={act.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
-                          <td className="py-3 px-4">
-                            <input
-                              type="text"
-                              value={act.ticketRef}
-                              onChange={(e) => {
-                                const updated = [...workLog.activities];
-                                updated[idx].ticketRef = e.target.value;
-                                setWorkLog({ ...workLog, activities: updated });
-                              }}
-                              className="w-24 px-2 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] font-mono font-bold text-indigo-500 outline-none"
-                            />
-                          </td>
-                          <td className="py-3 px-4">
-                            <select
-                              value={act.activityType}
-                              onChange={(e) => {
-                                const updated = [...workLog.activities];
-                                updated[idx].activityType = e.target.value;
-                                setWorkLog({ ...workLog, activities: updated });
-                              }}
-                              className="px-2 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] outline-none"
-                            >
-                              <option>Requirement Analysis</option>
-                              <option>Research & Development</option>
-                              <option>Customer Discussion</option>
-                              <option>Internal Discussion</option>
-                              <option>UI/UX Design</option>
-                              <option>Documentation</option>
-                              <option>Review</option>
-                              <option>Rework</option>
-                            </select>
-                          </td>
-                          <td className="py-3 px-4">
-                            <input
-                              type="text"
-                              value={act.description}
-                              onChange={(e) => {
-                                const updated = [...workLog.activities];
-                                updated[idx].description = e.target.value;
-                                setWorkLog({ ...workLog, activities: updated });
-                              }}
-                              placeholder="Describe your work..."
-                              className="w-full px-2 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] outline-none min-w-[250px]"
-                            />
-                          </td>
-                          <td className="py-3 px-4 font-mono">
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={act.startTime}
-                                onChange={(e) => {
-                                  const updated = [...workLog.activities];
-                                  updated[idx].startTime = e.target.value;
-                                  setWorkLog({ ...workLog, activities: updated });
-                                }}
-                                className="w-14 px-1 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-center"
-                              />
-                              <span>–</span>
-                              <input
-                                type="text"
-                                value={act.endTime}
-                                onChange={(e) => {
-                                  const updated = [...workLog.activities];
-                                  updated[idx].endTime = e.target.value;
-                                  setWorkLog({ ...workLog, activities: updated });
-                                }}
-                                className="w-14 px-1 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-center"
-                              />
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-1 font-bold">
-                              <input
-                                type="number"
-                                value={act.durationMinutes}
-                                onChange={(e) => {
-                                  const updated = [...workLog.activities];
-                                  updated[idx].durationMinutes = Number(e.target.value);
-                                  setWorkLog({ ...workLog, activities: updated });
-                                }}
-                                className="w-16 px-1.5 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-center text-indigo-400"
-                              />
-                              <span className="text-[10px] text-slate-400">m</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <select
-                              value={act.progressStatus}
-                              onChange={(e) => {
-                                const updated = [...workLog.activities];
-                                updated[idx].progressStatus = e.target.value;
-                                setWorkLog({ ...workLog, activities: updated });
-                              }}
-                              className="px-2 py-1 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] outline-none"
-                            >
-                              <option>In Progress</option>
-                              <option>Completed</option>
-                              <option>On Hold</option>
-                            </select>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <input
-                              type="checkbox"
-                              checked={act.blockerFlag}
-                              onChange={(e) => {
-                                const updated = [...workLog.activities];
-                                updated[idx].blockerFlag = e.target.checked;
-                                setWorkLog({ ...workLog, activities: updated });
-                              }}
-                              className="rounded text-rose-600 focus:ring-rose-500"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+              <DailyWorkLogsView
+                currentUser={currentUser}
+                tickets={tickets}
+                attendance={attendance}
+                onShowToast={showToast}
+                onRefreshData={() => loadAllData()}
+                onOpenTicketDetails={(t) => {
+                  setSelectedTicket(t);
+                  setModalType('ticket-detail');
+                }}
+              />
             )
           )}
 
@@ -4560,6 +4381,22 @@ export default function RecActsFullyFunctionalApp() {
                 onShowToast={showToast}
                 currentUserId={currentUser?.userId || currentUser?.id}
                 currentUserName={currentUser?.name}
+              />
+            )
+          )}
+
+          {/* ========================================================================= */}
+          {/* VIEW: ROLES & PERMISSIONS MATRIX (ENTERPRISE RBAC CONTROL PANEL) */}
+          {/* ========================================================================= */}
+          {activeTab === 'permissions' && (
+            (isDataLoading || tabTransitioning === 'permissions') ? (
+              <GenericTabSkeleton title="Roles & Permissions Management" />
+            ) : !['lead', 'manager', 'owner', 'god'].includes(role) && !currentUser?.isPlatformAdmin && !hasPermission(role as FunctionalRole, 'org:manage_settings') ? (
+              renderAccessRestricted('Permissions Management Restricted', 'Configuring organizational role permissions requires Manager, Owner, or God privileges.')
+            ) : (
+              <RolePermissionsView
+                currentRole={role}
+                onShowToast={showToast}
               />
             )
           )}
