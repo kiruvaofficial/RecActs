@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import prisma from '@/lib/prisma';
 
 export interface ZohoProjectItem {
   id: string;
@@ -11,9 +12,9 @@ export interface ZohoProjectItem {
 }
 
 export const KNOWN_ZOHO_PROJECTS: ZohoProjectItem[] = [
-  { id: "101301000000105539", name: "Requirements in progress", prefix: "LA-I", isKnownDefault: true },
-  { id: "101301000007065415", name: "AI Agentic team", prefix: "AGT", isKnownDefault: true },
-  { id: "101301000006534930", name: "Fabritec LLC", prefix: "FAB", isKnownDefault: true },
+  { id: "101301000000105539", name: "Requirements in progress", prefix: "LA-I" },
+  { id: "101301000007065415", name: "AI Agentic team", prefix: "AGT" },
+  { id: "101301000006534930", name: "Fabritec LLC", prefix: "FAB" },
   { id: "101301000005400082", name: "Apollo Blinds", prefix: "APO" },
   { id: "101301000004579607", name: "EDI Tickets", prefix: "EDI" },
   { id: "101301000006382424", name: "TEST1", prefix: "TST" },
@@ -42,14 +43,62 @@ export const KNOWN_ZOHO_PROJECTS: ZohoProjectItem[] = [
 
 const CONFIG_FILE_PATH = path.resolve(process.cwd(), '.zoho-sync-projects.json');
 
-const DEFAULT_SELECTED_IDS = [
-  "101301000000010271", // Version 4 in progress
-  "101301000000105539", // Requirements in progress
-  "101301000007065415", // AI Agentic team
-  "101301000006534930", // Fabritec LLC
+export const DEFAULT_SELECTED_IDS = [
+  "101301000000010271", // Version 4 in progress (single default project)
 ];
 
-export function getSelectedProjectIds(): string[] {
+let memorySelectedProjectIds: string[] | null = null;
+
+export async function getSelectedProjectIds(): Promise<string[]> {
+  if (memorySelectedProjectIds && memorySelectedProjectIds.length > 0) {
+    return memorySelectedProjectIds;
+  }
+
+  // 1. Try reading from PostgreSQL database (persists across all Vercel serverless environments)
+  try {
+    const flag = await prisma.featureFlag.findUnique({
+      where: { key: 'zoho_selected_projects' },
+    });
+    if (flag?.description) {
+      const parsed = JSON.parse(flag.description);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memorySelectedProjectIds = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not read zoho_selected_projects from DB:', e);
+  }
+
+  // 2. Try reading from local file if available (local development)
+  try {
+    if (fs.existsSync(CONFIG_FILE_PATH)) {
+      const data = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed?.selectedProjectIds) && parsed.selectedProjectIds.length > 0) {
+        memorySelectedProjectIds = parsed.selectedProjectIds;
+        return parsed.selectedProjectIds;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Fallback to environment variable or defaults
+  if (process.env.ZOHO_SELECTED_PROJECTS) {
+    const fromEnv = process.env.ZOHO_SELECTED_PROJECTS.split(',').map((s) => s.trim()).filter(Boolean);
+    if (fromEnv.length > 0) {
+      memorySelectedProjectIds = fromEnv;
+      return fromEnv;
+    }
+  }
+
+  memorySelectedProjectIds = DEFAULT_SELECTED_IDS;
+  return DEFAULT_SELECTED_IDS;
+}
+
+export function getSelectedProjectIdsSync(): string[] {
+  if (memorySelectedProjectIds && memorySelectedProjectIds.length > 0) {
+    return memorySelectedProjectIds;
+  }
   try {
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       const data = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
@@ -58,22 +107,33 @@ export function getSelectedProjectIds(): string[] {
         return parsed.selectedProjectIds;
       }
     }
-  } catch (e) {
-    console.warn('Could not read .zoho-sync-projects.json:', e);
-  }
-
-  // Fallback to environment variable or defaults
-  if (process.env.ZOHO_SELECTED_PROJECTS) {
-    const fromEnv = process.env.ZOHO_SELECTED_PROJECTS.split(',').map((s) => s.trim()).filter(Boolean);
-    if (fromEnv.length > 0) return fromEnv;
-  }
-
+  } catch (e) {}
   return DEFAULT_SELECTED_IDS;
 }
 
-export function saveSelectedProjectIds(projectIds: string[]): string[] {
+export async function saveSelectedProjectIds(projectIds: string[]): Promise<string[]> {
+  const cleanIds = Array.from(new Set(projectIds.filter(Boolean)));
+  memorySelectedProjectIds = cleanIds;
+
+  // 1. Save to PostgreSQL database (persists across all Vercel serverless lambdas)
   try {
-    const cleanIds = Array.from(new Set(projectIds.filter(Boolean)));
+    await prisma.featureFlag.upsert({
+      where: { key: 'zoho_selected_projects' },
+      update: { description: JSON.stringify(cleanIds), isEnabled: true },
+      create: {
+        key: 'zoho_selected_projects',
+        name: 'Zoho Selected Projects',
+        description: JSON.stringify(cleanIds),
+        isEnabled: true,
+        scope: 'organization',
+      },
+    });
+  } catch (e) {
+    console.warn('Failed saving selected projects to DB:', e);
+  }
+
+  // 2. Best-effort local file write
+  try {
     const content = JSON.stringify(
       {
         selectedProjectIds: cleanIds,
@@ -83,11 +143,9 @@ export function saveSelectedProjectIds(projectIds: string[]): string[] {
       2
     );
     fs.writeFileSync(CONFIG_FILE_PATH, content, 'utf8');
-    return cleanIds;
-  } catch (e) {
-    console.error('Failed saving selected Zoho project IDs:', e);
-    return projectIds;
-  }
+  } catch (e) {}
+
+  return cleanIds;
 }
 
 /**

@@ -301,8 +301,9 @@ export const ZohoIntegrationView: React.FC<ZohoIntegrationViewProps> = ({
                   type="button"
                   onClick={onSelectDefaultProjects}
                   className="px-3 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
+                  title="Select only the primary Version 4 project"
                 >
-                  Default 3
+                  Version 4 (Default)
                 </button>
                 <button
                   type="button"

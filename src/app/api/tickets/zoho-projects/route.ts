@@ -14,7 +14,7 @@ export async function GET() {
   const { error } = await requireTenantContext();
   if (error) return error;
 
-  const selectedProjectIds = getSelectedProjectIds();
+  const selectedProjectIds = await getSelectedProjectIds();
   let projects = [...KNOWN_ZOHO_PROJECTS];
   let isConnected = false;
 
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const saved = saveSelectedProjectIds(selectedProjectIds);
+    const saved = await saveSelectedProjectIds(selectedProjectIds);
     return NextResponse.json({
       success: true,
       message: `Updated project sync selection (${saved.length} projects selected)`,

@@ -956,12 +956,28 @@ export default function RecActsFullyFunctionalApp() {
 
   // Zoho Sprints Integration & Scheduled Sync Handlers
   const loadZohoProjectsConfig = async () => {
+    // 0ms instant local storage hydration
+    try {
+      const cached = localStorage.getItem('recacts_zoho_selected_projects');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedZohoProjectIds(parsed);
+        }
+      }
+    } catch {}
+
     try {
       const res = await fetch('/api/tickets/zoho-projects');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.projects)) setAvailableZohoProjects(data.projects);
-        if (Array.isArray(data.selectedProjectIds)) setSelectedZohoProjectIds(data.selectedProjectIds);
+        if (Array.isArray(data.selectedProjectIds)) {
+          setSelectedZohoProjectIds(data.selectedProjectIds);
+          try {
+            localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify(data.selectedProjectIds));
+          } catch {}
+        }
         if (typeof data.isConnected === 'boolean') setHasZohoAuthConnected(data.isConnected);
       }
     } catch (e) {
@@ -990,6 +1006,11 @@ export default function RecActsFullyFunctionalApp() {
   const handleSaveZohoProjects = async (idsToSave?: string[]) => {
     const ids = idsToSave || selectedZohoProjectIds;
     setIsSavingZohoProjects(true);
+    // Persist locally immediately
+    try {
+      localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify(ids));
+    } catch {}
+
     try {
       const res = await fetch('/api/tickets/zoho-projects', {
         method: 'POST',
@@ -998,7 +1019,10 @@ export default function RecActsFullyFunctionalApp() {
       });
       const data = await res.json();
       if (res.ok) {
-        showToast(`Saved ${ids.length} projects for Zoho sync!`);
+        showToast(`Saved ${ids.length} project${ids.length === 1 ? '' : 's'} for Zoho sync!`);
+        if (Array.isArray(data.selectedProjectIds)) {
+          setSelectedZohoProjectIds(data.selectedProjectIds);
+        }
       } else {
         showToast(data.error || 'Failed saving project selection');
       }
@@ -1014,23 +1038,32 @@ export default function RecActsFullyFunctionalApp() {
       ? selectedZohoProjectIds.filter((id) => id !== pId)
       : [...selectedZohoProjectIds, pId];
     setSelectedZohoProjectIds(updated);
+    try {
+      localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify(updated));
+    } catch {}
   };
 
   const handleSelectAllZohoProjects = () => {
     const all = availableZohoProjects.map((p) => p.id);
     setSelectedZohoProjectIds(all);
+    try {
+      localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify(all));
+    } catch {}
   };
 
   const handleDeselectAllZohoProjects = () => {
     setSelectedZohoProjectIds([]);
+    try {
+      localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify([]));
+    } catch {}
   };
 
   const handleSelectDefaultZohoProjects = () => {
-    setSelectedZohoProjectIds([
-      '101301000000105539', // Requirements in progress
-      '101301000007065415', // AI Agentic team
-      '101301000006534930', // Fabritec LLC
-    ]);
+    const v4Only = ['101301000000010271']; // Version 4 in progress (single default project)
+    setSelectedZohoProjectIds(v4Only);
+    try {
+      localStorage.setItem('recacts_zoho_selected_projects', JSON.stringify(v4Only));
+    } catch {}
   };
 
   const handleAddCustomZohoProject = () => {

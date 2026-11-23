@@ -810,7 +810,7 @@ export async function fetchAllZohoTickets(
 
   const projectIdsToFetch = (selectedProjectIds && selectedProjectIds.length > 0)
     ? selectedProjectIds
-    : getSelectedProjectIds();
+    : await getSelectedProjectIds();
 
   const projectListToSync: Array<{ id: string; name: string }> = [];
 
